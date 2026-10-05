@@ -3,6 +3,7 @@ import {publicSession,type Session,type Feedback} from '@/lib/pipeline/schema';
 import {gradeObjective,scheduleEvidence,addRetry} from '@/lib/pipeline/scheduling';
 import {feedbackFor,reviewResolved,resolveReview} from '@/lib/pipeline/feedback';
 import {gradeOpen} from '@/lib/pipeline/generation';
+import {applicationStyles,applicationPrompt} from '@/lib/pipeline/variation';
 import {captureFor} from '@/lib/pipeline/storage';
 export async function POST(request:Request){try{
  const owner=await user(request),body=await boundedJson(request,5000);
@@ -12,6 +13,11 @@ export async function POST(request:Request){try{
  if(s.feedback[e.id])s.feedback[e.id]=feedbackFor(e,s.feedback[e.id]);
  let record:Feedback|null=null;
  if(body.action==='source'){if(!s.feedback[e.id])s.assisted[e.id]=true;}
+ else if(body.action==='style'){
+  const item=s.items.find(i=>i.id===e.itemId);
+  if(s.feedback[e.id]||e.type!=='open'||!item?.sense.startsWith('Unverified context')||!applicationStyles.includes(body.style))throw new HttpError(400,'Choose an available writing task before checking your answer.');
+  e.prompt=applicationPrompt(item,s.profile,body.style);
+ }
  else if(body.action==='continue'){
   if(!s.feedback[e.id]||!reviewResolved(s.feedback[e.id]))throw new HttpError(400,'Check or review your answer first.');s.index++;
  }else if(body.action==='resolve'){
@@ -26,14 +32,16 @@ export async function POST(request:Request){try{
   record=feedbackFor(e,record);record.assisted=!!s.assisted[e.id];s.feedback[e.id]=record;s.answers[e.id]=body.answer;
  }else throw new HttpError(400,'Invalid practice action.');
  if(record){const c=await captureFor(owner,s.captureId);addRetry(s,e,record,c.plan?.exercises??s.queue);}
- const next=JSON.stringify(s),now=new Date().toISOString();
+ const now=new Date().toISOString();
+ const state=record&&record.outcome!=='uncertain'?await db().prepare('SELECT streak,due_at FROM item_schedule WHERE item_id=? AND user_id=?').bind(e.itemId,owner).first<{streak:number;due_at:string}>():null;
+ const timing=record?scheduleEvidence(e,record,state?.streak??0,new Date(now),state?.due_at):null;
+ if(record&&e.phase==='recall'&&record.method==='objective'&&!record.assisted&&state&&state.due_at>now)record.scheduleNote='Extra practice saved. Your next recall review date is unchanged because this item is not due yet.';
+ const next=JSON.stringify(s);
  const statements=[db().prepare('UPDATE practice_sessions SET data=?,updated_at=? WHERE id=? AND user_id=? AND data=?').bind(next,now,s.id,owner,row.data)];
  if(record&&record.outcome!=='uncertain'){
-  const state=await db().prepare('SELECT streak FROM item_schedule WHERE item_id=? AND user_id=?').bind(e.itemId,owner).first<{streak:number}>();
-  const timing=scheduleEvidence(e,record,state?.streak??0,new Date(now));
   statements.push(db().prepare('INSERT OR IGNORE INTO item_attempts (id,user_id,item_id,session_id,exercise_id,outcome,answer,assisted,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM practice_sessions WHERE id=? AND user_id=? AND data=?)').bind(`${s.id}:${e.id}`,owner,e.itemId,s.id,e.id,record.outcome,s.answers[e.id]??'',record.assisted?1:0,now,s.id,owner,next));
   // changes() links scheduling to the idempotent attempt insert in this atomic batch.
-  if(timing)statements.push(db().prepare('INSERT INTO item_schedule (item_id,user_id,streak,due_at) SELECT ?,?,?,? WHERE changes()>0 ON CONFLICT(item_id) DO UPDATE SET streak=excluded.streak,due_at=excluded.due_at').bind(e.itemId,owner,timing.streak,timing.dueAt));
+  if(timing)statements.push(db().prepare('INSERT INTO item_schedule (item_id,user_id,streak,due_at) SELECT ?,?,?,? WHERE changes()>0 ON CONFLICT(item_id) DO UPDATE SET streak=excluded.streak,due_at=excluded.due_at WHERE item_schedule.user_id=excluded.user_id AND item_schedule.due_at<=? AND item_schedule.streak=?').bind(e.itemId,owner,timing.streak,timing.dueAt,now,state?.streak??0));
  }
  const results=await db().batch(statements);if(!results[0].meta.changes)throw new HttpError(409,'Your session was updated elsewhere. Reopen it to continue.');
  return json({session:publicSession(s)});

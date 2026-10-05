@@ -35,6 +35,7 @@ console.log('PASS: auth, origins, real image upload, review gate, immutable sour
 const itemId=generated.data.plan.items[0].id;
 async function timing(){return (await request('library')).data.schedule.find(i=>i.item_id===itemId);}
 const applicationPrompts=new Set();
+const beforeExtraPractice=await timing();
 for(const decision of ['confident','practise','unsure']){
  session=(await request('session',{captureId:capture.id})).data.session;
  assert.equal(session.summary,null);assert.equal(session.teaching,null);
@@ -52,7 +53,34 @@ for(const decision of ['confident','practise','unsure']){
  assert.equal(session.summary.independentRecall,1);assert.equal(session.summary.unverified,1);
 }
 assert.equal(applicationPrompts.size,3);
-assert.equal((await timing()).streak,3);
+assert.deepEqual(await timing(),beforeExtraPractice,'Immediate repeats cannot advance or reset the next review');
 const focused=await request('session',{captureId:capture.id,focusItemIds:[itemId]});assert.equal(focused.status,200);assert.equal(focused.data.session.total,2);
 assert.equal((await request('session',{captureId:capture.id,focusItemIds:['another-users-item']})).status,400);
 console.log('PASS: all three self-review decisions preserve recall, three task variants, persistent honest recaps, targeted practice and ownership validation.');
+
+// A title-only edit must preserve the reviewed source and generated practice.
+const beforeTitle=(await request('library')).data.captures.find(c=>c.id===capture.id);
+const renamed=await request('captures',{id:capture.id,extraction:beforeTitle.extraction,title:'Travel phrases — renamed'});
+assert.equal(renamed.status,200);assert.deepEqual(renamed.data.capture.plan,beforeTitle.plan);assert.equal(renamed.data.capture.title,'Travel phrases — renamed');
+assert.equal((await request('captures',{id:capture.id,extraction:beforeTitle.extraction,title:' '})).status,400);
+let custom=(await request('session',{captureId:capture.id})).data.session;
+custom=(await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'check',answer:'look forward to'})).data.session;
+assert.match(custom.feedback.scheduleNote,/not due yet/);
+custom=(await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'continue'})).data.session;
+custom=(await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'style',style:'rewrite'})).data.session;
+assert.match(custom.exercise.prompt,/Adapt the source/);
+assert.equal((await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'style',style:'invalid'})).status,400);
+console.log('PASS: same-day scheduling, title-only preservation and validated writing-task choice.');
+
+// Two sessions answering the same new item at once must only advance it once.
+const freshForm=new FormData();freshForm.set('extraction',JSON.stringify(extraction));freshForm.set('image',new Blob([await readFile(new URL('./fixtures/reading-example.png',import.meta.url))],{type:'image/png'}),'parallel-test.png');
+const freshUpload=await fetch(`${base}/api/v2/extract`,{method:'POST',headers,body:freshForm});assert.equal(freshUpload.status,201);const fresh=(await freshUpload.json()).capture;
+assert.equal((await request('captures',{id:fresh.id,extraction})).status,200);
+const freshPlan=(await request('generate',{id:fresh.id,forms:['look forward to']})).data.plan;
+const [parallelA,parallelB]=await Promise.all([request('session',{captureId:fresh.id}),request('session',{captureId:fresh.id})]);
+const parallelChecks=await Promise.all([parallelA,parallelB].map(({data:{session:s}})=>request('answer',{sessionId:s.id,exerciseId:s.exercise.id,action:'check',answer:'look forward to'})));
+assert.ok(parallelChecks.every(r=>r.status===200));
+const afterParallel=(await request('library')).data.schedule.find(i=>i.item_id===freshPlan.items[0].id);assert.equal(afterParallel.streak,1);
+for(let n=0;n<5;n++){const s=(await request('session',{captureId:fresh.id})).data.session;const result=await request('answer',{sessionId:s.id,exerciseId:s.exercise.id,action:'check',answer:n===4?'wrong':'look forward to'});assert.match(result.data.session.feedback.scheduleNote,/not due yet/);}
+assert.deepEqual((await request('library')).data.schedule.find(i=>i.item_id===freshPlan.items[0].id),afterParallel);
+console.log('PASS: concurrent sessions advance one interval only; five immediate repeats, including an error, preserve the exact due timestamp.');

@@ -3,9 +3,10 @@ import {type Extraction,type Region,type Profile,textOf} from './schema.ts';
 export const ocrLanguages={en:'eng',es:'spa',fr:'fra',de:'deu',ko:'kor',ja:'jpn'};
 type OCRLine={text:string;confidence:number;bbox:{x0:number;y0:number;x1:number;y1:number}};
 const chrome=/^(?:\d{1,2}:\d{2}(?::\d{2})?|home|menu|search|subscribe|sign in|log in|share|like|follow|advertisement|sponsored|next|back|settings|cancel|close|download|comments?|\d+\s*(?:views|likes))$/i;
+export function textWarnings(text:string){return /(?:^|\s)\|(?:\s|$)/u.test(text)?['Check “|” against the image: OCR may have confused it with I or l. Correct it only if the screenshot shows a letter.']:[];}
 export function regionsFromOCR(lines:OCRLine[],width:number,height:number):Extraction{
  const regions:Region[]=lines.filter(l=>l.text.trim()).slice(0,100).map((l,n)=>{
-  const rawText=l.text.trim(), b=l.bbox, issues:string[]=[];
+  const rawText=l.text.trim(), b=l.bbox, issues:string[]=textWarnings(rawText);
   const ui=chrome.test(rawText)||/^https?:\/\/\S+$/.test(rawText);
   if(l.confidence<82)issues.push('Check unclear text against the screenshot.');
   if(b.x0<3||b.y0<3||b.x1>width-3||b.y1>height-3)issues.push('Text may be cropped at the image edge.');

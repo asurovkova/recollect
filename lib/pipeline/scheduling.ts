@@ -5,11 +5,13 @@ export function gradeObjective(e:Exercise,answer:string):Feedback{
  const correct=[e.answer,...e.alternatives].some(a=>answerKey(a)===answerKey(answer));
  return {outcome:correct?'correct':'incorrect',expected:e.answer,explanation:e.explanation,method:'objective'};
 }
-export function scheduleEvidence(e:Exercise,feedback:Feedback,streak:number,now=new Date()){
+export function scheduleEvidence(e:Exercise,feedback:Feedback,streak:number,now=new Date(),dueAt?:string){
  const f=feedbackFor(e,feedback);
  // Only independent recall changes the recall interval. Confidence, sentence use,
  // recognition and source-assisted practice are separate evidence.
  if(e.phase!=='recall'||f.method!=='objective'||f.assisted)return null;
+ // Extra practice is useful, but is not evidence of delayed retention.
+ if(dueAt && new Date(dueAt).getTime()>now.getTime())return null;
  return schedule(f.outcome,streak,now);
 }
 export function schedule(outcome:Feedback['outcome'],streak:number,now=new Date(),assisted=false){
