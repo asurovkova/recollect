@@ -1,0 +1,3 @@
+import {db,user,json,failure,boundedJson,HttpError} from '@/lib/server';
+import {profileSchema} from '@/lib/pipeline/schema';
+export async function POST(request:Request){try{const owner=await user(request);const parsed=profileSchema.safeParse(await boundedJson(request));if(!parsed.success)throw new HttpError(400,'Choose a language, level, and learning goal.');await db().prepare('INSERT INTO learner_profiles (user_id,data) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET data=excluded.data').bind(owner,JSON.stringify(parsed.data)).run();return json({profile:parsed.data});}catch(e){return failure(e)}}

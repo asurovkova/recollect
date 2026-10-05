@@ -1,62 +1,74 @@
-# Recollect — Screenshot learning studio
+# Recollect
 
-A working English-language prototype of a screenshot-to-practice assistant. It imports screenshots, extracts text in the browser, connects related captures, and creates contextual recall cards and fill-in-the-blank quizzes. Original screenshots and practice history are saved in a private, authenticated library.
+A private screenshot language-learning prototype with two views: **Library** and **Practice**. The main flow is **Add screenshot → Review text if needed → Practise**.
 
-## Try it
+## Use
 
-1. Explore the clearly labelled example collection, or choose **Add screenshot**.
-2. Import a PNG, JPG, or WebP image (up to 8 MB), or use **Paste text**. `tests/fixtures/reading-example.png` is an authored example for trying OCR.
-3. Review the extracted text. Edit the suggested words and collection, and optionally name the source.
-4. Choose **Create practice materials**. Adding related screenshots to the same collection extends its practice set without overwriting earlier cards or their progress.
-5. Practise with **Flip & remember**, or type answers in **Put it to the test**. **View original context** opens the original screenshot.
-6. Edit your learning goal from the target icon or sidebar. Topic rules and the goal provide a default collection; shared vocabulary takes priority when matching existing captures.
+1. Save a target language, approximate CEFR level, and learning goal once. Edit these in Learning settings later.
+2. Import a PNG, JPEG, or WebP screenshot (up to 8 MB). OCR retains text regions, reading order, coordinates, and confidence. English, Spanish, French, German, Korean, and Japanese are available.
+3. When prompted, select relevant regions and check their language. Deselect interface text. Mark areas of interest and enter corrections separately; original OCR text and the original image remain saved.
+4. Practise one question at a time: answer, check, read concise feedback, continue. View source shows the exact region and marks an unanswered question as assisted.
+5. Sessions and responses persist. The Practice view shows material ready for review. There are no notifications or background photo-library access.
 
-Example collection activity is not saved. Your own captures, learning goal, and completed review events are stored server-side. Hosted and local preview databases are separate.
+## Model connection and fallback
 
-## Prototype boundaries
+The application includes a server-side OpenAI Responses API integration. Set `OPENAI_API_KEY` as a **Sites runtime secret**. `OPENAI_MODEL` optionally overrides the default `gpt-5.4-mini`. Neither value belongs in `.openai/hosting.json`, client code, Git, or browser storage. For local development only, use an ignored environment file with the local runtime. Use the OpenAI Developers plugin's API-key workflow when configuring the hosted Site.
 
-- English OCR uses Tesseract.js in the browser. Its worker, WASM engine, and English language data are downloaded from the Tesseract CDN on first use; screenshot pixels are processed locally until you explicitly save to your library.
-- This version uses deterministic word selection, vocabulary overlap, and topic rules. It does not call an LLM or infer language-learning goals from arbitrary prose.
-- Flashcards practise missing words in the original sentence; they do not invent translations or definitions. Quiz answers match the captured word, ignoring case, surrounding punctuation, and excess whitespace. Valid synonyms are not graded as equivalent.
-- New screenshots arrive through import. The app does not watch the device's photo library or capture the screen in the background.
-- Context includes the screenshot and any source label entered by the learner. A URL or video timestamp cannot be recovered reliably from image pixels and is not fabricated.
-- Review history persists; unfinished sessions and unsaved imports do not survive a page reload. This prototype does not implement spaced repetition or adaptive difficulty.
-- Saving sends the image and reviewed text to the app's private storage. The hosted app requires the owner's ChatGPT sign-in, and every data/image endpoint checks the authenticated user.
+With a model connected, the pipeline:
 
-## Stack and storage
+- interprets layout and annotates the OCR regions without overwriting their text;
+- selects at most four contextual words, phrases, or grammatical patterns using goals, level, learner-selected highlights, and stored performance;
+- generates explanations, optional labelled new examples, a short recognition–recall–application sequence, and alternative retry questions;
+- validates the schema and source references, then runs a separate semantic quality check;
+- revises failing output at most once and omits questions that still fail;
+- matches existing items by language, normalized form, and contextual sense, attaching new source examples without replacing history;
+- grades open responses by meaning and use, allowing alternatives and returning uncertainty for learner review.
 
-React with Vinext/Vite, Cloudflare Workers, D1 for records and review history, R2 for screenshot bytes, Tesseract.js for OCR, and the bundled Radix/Shadcn primitives for dialogs, navigation tabs, sidebar, and progress. The only WebMCP action, `open_screenshot_import`, opens the same import form; it never saves or uploads by itself.
+**The deployed environment currently has no model key configured.** Until connected, the app explicitly provides **source recall only**: learners select up to four exact forms; deterministic cloze questions preserve the captured wording, and new-sentence responses require learner review. It does not invent contextual definitions, automatically match uncertain senses, or pretend to grade open responses. Unverified senses stay separate across screenshots. Automatic selection, semantic matching, vision interpretation, and model quality/grading paths require a live connection to activate and verify.
 
-`lib/learning.ts` contains extraction-independent vocabulary and card logic. `lib/server.ts` handles identity, validation, and storage access. API routes live in `app/api/`. The UI is in `app/studio.tsx` and `app/globals.css`.
+The integration follows the official [Responses structured-output format](https://developers.openai.com/api/docs/guides/structured-outputs) and [image-input format](https://developers.openai.com/api/docs/guides/images-vision). Requests use `store: false`. With a connection, images are sent to the model for layout analysis and selected text, learning settings, and relevant prior item summaries are used for lesson generation. Without one, OCR runs in the browser and images/text are saved only to the private app storage. Tesseract downloads its worker, WASM runtime, and language data on first use.
 
-## Local development
+## Pipeline and data
 
-Requires Node.js 22.13 or later and npm.
+- `lib/pipeline/schema.ts`: Zod data contracts and derived strict JSON Schema.
+- `extraction.ts`: OCR region creation, interface heuristics, review gating.
+- `model.ts` / `generation.ts`: model transport, layout, contextual generation, semantic grading.
+- `validation.ts` / `quality-loop.ts`: deterministic provenance/answer checks and bounded semantic revision.
+- `source-recall.ts`: transparent, limited no-model fallback.
+- `scheduling.ts`: objective grading, different-question retries, and stored review intervals.
+- `storage.ts`: owner-scoped source links, contextual item identities, history-preserving plan writes.
+- `app/api/v2/`: authenticated upload, review, profile, generation, session, and answer endpoints.
+- `app/studio.tsx`: minimal UI, with Radix dialogs and responsive layouts.
+
+D1 holds records, profiles, item/source links, sessions, attempts, and schedules. R2 holds screenshot bytes. Server endpoints enforce ownership and same-origin mutations. Answer rules stay server-side until feedback; explicitly viewing source is recorded as assistance. Answer submissions are idempotent. Concurrent session edits use optimistic locking.
+
+The additive `0001_fair_vermin.sql` migration preserves all original captures, preferences, and `review_events`. Older captures remain visible and can be reviewed to create new practice; they have no historic OCR coordinates. When an old term becomes a new item, its legacy review IDs are imported once. Original review rows are retained. The v1 API and learning module remain only for compatibility.
+
+Review intervals are simple prototype rules: successful unassisted responses progress through 1, 3, 7, 14, and 30 days; incorrect or assisted responses return after one day. Uncertain responses are not scheduled until reviewed. This is not a validated learning-outcome model. Model quality checks reduce errors but do not guarantee correctness.
+
+## Development
+
+Node.js 22.13+ and npm:
 
 ```sh
 npm ci
-npm run db:generate   # only after schema changes
 npm run build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_melted_iceman.sql
-npm run dev -- --hostname 127.0.0.1 --port 5179
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_fair_vermin.sql
+npm run dev -- --port 5179
 ```
 
-Apply each local migration once, in order. The dev server provides a local-only simulated sign-in at `/signin-with-chatgpt?return_to=/`; it is not part of the production deployment. The hosted app uses Sites authentication.
+Apply each migration once, in order. Use `npm run db:generate` only after a schema change. The local-only simulated sign-in is `/signin-with-chatgpt?return_to=/`; the deployed Site uses ChatGPT authentication. Local and hosted data are separate.
+
+## Verification
 
 ```sh
 npm test
 node node_modules/typescript/bin/tsc --noEmit
-node tests/api-check.mjs  # requires the local preview; creates labelled test data
+node tests/api-v2-check.mjs
+npm run build
 ```
 
-The API check is intended for the local simulated sign-in only, not production. It creates an image-backed capture and idempotent review event. IDs are written to ignored `.sites-runtime/api-check-ids.json` for cleanup; it never deletes existing learner data.
+The API check requires the local preview **without a model key** and creates authored test captures; it does not delete learner data. It checks authentication, origin protection, image storage, review gates, immutable original text, separate corrections, answer secrecy, idempotency, retry variants, uncertain-answer review, session resumption, and stored schedules.
 
-## Checks performed
-
-- Unit checks for contextual masking, repeated words, whole-word boundaries, multiword phrases, unavailable terms, answer matching, grouping, and source-derived sample cards.
-- TypeScript validation and production build.
-- Local API checks for authentication, cross-origin mutation rejection, actual screenshot upload/retrieval, invalid-term rejection, durable library records, and idempotent review retries.
-- Browser checks for screenshot OCR, editable extracted text, saving and viewing source context, flashcards, quiz answers, persistence after refresh, and narrow/desktop layouts.
-- WebMCP import action validated with a valid input and a rejected invalid input.
-
-These are prototype verification checks, not evidence of improved learning outcomes.
+Unit checks cover source provenance, uncertainty, selection limits, sense identity, answer leakage, duplicate questions, objective grading, scheduling, and the one-revision limit. Browser QA covers real OCR upload, region selection, settings, practice feedback, source highlighting, persistence, and desktop/mobile layouts. Live model responses have not been tested because no key is configured.

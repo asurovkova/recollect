@@ -1,0 +1,4 @@
+import {db,user,json,failure} from '@/lib/server';
+import {profileFor,fromRow} from '@/lib/pipeline/storage';
+import {modelAvailable} from '@/lib/pipeline/model';
+export async function GET(request:Request){try{const owner=await user(request);const [rows,profile,schedule,sources]=await Promise.all([db().prepare('SELECT c.*,x.extraction,x.plan,x.notice FROM captures c LEFT JOIN capture_content x ON x.capture_id=c.id WHERE c.user_id=? ORDER BY c.created_at DESC').bind(owner).all<Record<string,unknown>>(),profileFor(owner),db().prepare('SELECT * FROM item_schedule WHERE user_id=?').bind(owner).all(),db().prepare('SELECT s.* FROM item_sources s JOIN learning_items i ON s.item_id=i.id WHERE i.user_id=?').bind(owner).all()]);return json({captures:rows.results.map(fromRow),profile,modelAvailable:modelAvailable(),schedule:schedule.results,sources:sources.results});}catch(e){return failure(e)}}
