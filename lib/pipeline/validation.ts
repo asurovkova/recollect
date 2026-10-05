@@ -1,5 +1,6 @@
-import {type Plan,type Extraction,type Profile,type Exercise,normalized,answerKey,textOf} from './schema.ts';
+import {type Plan,type Extraction,type Profile,type Exercise,normalized,answerKey,textOf,recallPrompt} from './schema.ts';
 import {safeRegions} from './extraction.ts';
+import {findForms} from './text-matching.ts';
 
 export type Rejection={id:string;reason:string};
 export function validatePlan(plan:Plan,extraction:Extraction,profile:Profile,captureId:string){
@@ -26,7 +27,8 @@ export function validatePlan(plan:Plan,extraction:Extraction,profile:Profile,cap
   else if(['meaning','collocation'].includes(e.type)&&(e.choices.length<3||e.choices.filter(a=>answerKey(a)===answerKey(e.answer)).length!==1||new Set(e.choices.map(answerKey)).size!==e.choices.length))reason='Choices must contain one answer and distinct distractors.';
   else if(['meaning','collocation'].includes(e.type)&&e.alternatives.length)reason='Multiple-choice answers must be unique.';
   else if(e.type==='reorder'&&normalized([...e.choices].sort().join(' '))!==normalized(e.answer.split(/\s+/).sort().join(' ')))reason='Reordering must use exactly the supplied words.';
-  else if(['cloze','meaning','collocation'].includes(e.type)&&answerKey(`${e.prompt} ${e.context}`).includes(answerKey(e.answer)))reason='The answer is revealed in the question.';
+  // The fixed instruction contains ordinary function words but supplies no answer cue.
+  else if(['cloze','meaning','collocation'].includes(e.type)&&((!(e.type==='cloze'&&e.prompt===recallPrompt)&&findForms(e.prompt,e.answer,item.language).length)||findForms(e.context,e.answer,item.language).length))reason='The answer is revealed in the question.';
   else if(e.type==='open'&&e.phase!=='application')reason='Open responses need an application objective.';
   const duplicate=`${e.itemId}|${e.type}|${normalized(e.prompt)}|${normalized(e.context)}`;
   if(seen.has(duplicate)||seen.has(e.id))reason='Duplicate question.';

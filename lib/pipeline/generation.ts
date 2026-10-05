@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {type Extraction,type Profile,type LearningItem,type Plan,type Exercise,type Feedback,planSchema,normalized,textOf} from './schema';
+import {type Extraction,type Profile,type LearningItem,type Plan,type Exercise,type Feedback,planSchema,normalized,textOf,sourceRecallNotice} from './schema';
 import {safeRegions} from './extraction';
 import {checkedGeneration} from './quality-loop';
 import {modelAvailable,structured} from './model';
@@ -18,7 +18,7 @@ async function audit(plan:Plan,extraction:Extraction,profile:Profile,existing:un
  return structured('lesson_quality',auditSchema,`Independently check the lesson. Reject any item/exercise with uncertain or invented source, incorrect/contextually altered meaning/register, unsupported grammatical target, multiple defensible MC answers, implausible distractors, answer leakage, redundant questions, unnatural language or inappropriate difficulty for the level. A displayed source may contain the vocabulary being tested for meaning but must not reveal its definition; cloze must hide its answer. Verify source cites and labels. Reject match IDs for different senses/language/form; a match must be unambiguous. Return rejected IDs with concise reasons; do not approve based on the generator's claims.`,{plan,extraction,profile,existing});
 }
 export async function generate(extraction:Extraction,profile:Profile,captureId:string,existing:unknown,selectedForms:string[]=[]){
- if(!modelAvailable())return {plan:sourceRecallPlan(extraction,profile,captureId,selectedForms),notice:'Source recall only. Contextual lessons need a model connection.'};
+ if(!modelAvailable())return {plan:sourceRecallPlan(extraction,profile,captureId,selectedForms),notice:sourceRecallNotice};
  const candidates=(existing as Array<LearningItem&{missed:number;attempts:number}>).filter(i=>i.language===profile.targetLanguage).map(({id,language,form,sense,topic,missed,attempts})=>({id,language,form,sense,topic,missed,attempts}));
  const input={captureId,profile,regions:safeRegions(extraction,profile),existing:candidates,learnerSelectedForms:selectedForms};
  return checkedGeneration({extraction,profile,captureId,produce:async(previous,issues,revision)=>{

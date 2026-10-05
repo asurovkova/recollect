@@ -6,7 +6,7 @@ A private screenshot language-learning prototype with two views: **Library** and
 
 1. Save a target language, approximate CEFR level, and learning goal once. Edit these in Learning settings later.
 2. Import a PNG, JPEG, or WebP screenshot (up to 8 MB). OCR retains text regions, reading order, coordinates, and confidence. English, Spanish, French, German, Korean, and Japanese are available.
-3. When prompted, select relevant regions and check their language. Deselect interface text. Mark areas of interest and enter corrections separately; original OCR text and the original image remain saved.
+3. OCR retries a text-block and sparse-text layout when the first pass is empty or uncertain. If reading cannot finish, the screenshot can still be saved with a manual correction. When prompted, select relevant regions and check their language. Deselect interface text. Mark areas of interest and enter corrections separately; original OCR text and the original image remain saved.
 4. Practise one question at a time: answer, check, read concise feedback, continue. View source shows the exact region and marks an unanswered question as assisted.
 5. Sessions and responses persist. The Practice view shows material ready for review. There are no notifications or background photo-library access.
 
@@ -24,7 +24,7 @@ With a model connected, the pipeline:
 - matches existing items by language, normalized form, and contextual sense, attaching new source examples without replacing history;
 - grades open responses by meaning and use, allowing alternatives and returning uncertainty for learner review.
 
-**The deployed environment currently has no model key configured.** Until connected, the app explicitly provides **source recall only**: learners select up to four exact forms; deterministic cloze questions preserve the captured wording, and new-sentence responses require learner review. It does not invent contextual definitions, automatically match uncertain senses, or pretend to grade open responses. Unverified senses stay separate across screenshots. Automatic selection, semantic matching, vision interpretation, and model quality/grading paths require a live connection to activate and verify.
+**The deployed environment currently has no model key configured.** Until connected, the app explicitly provides **source recall only**: learners enter up to four words or phrases, one per line (commas stay within a phrase); selection tolerates case, apostrophe style, Unicode composition and Japanese OCR spacing while deterministic cloze questions preserve the captured wording, and new-sentence responses require learner review. Repeated words use a contiguous source excerpt containing one occurrence. Missing or unsupported selections return specific guidance and remain in the editor; older fallback lessons refresh when reopened. It does not invent contextual definitions, automatically match uncertain senses, or pretend to grade open responses. Unverified senses stay separate across screenshots. Automatic selection, semantic matching, vision interpretation, and model quality/grading paths require a live connection to activate and verify.
 
 The integration follows the official [Responses structured-output format](https://developers.openai.com/api/docs/guides/structured-outputs) and [image-input format](https://developers.openai.com/api/docs/guides/images-vision). Requests use `store: false`. With a connection, images are sent to the model for layout analysis and selected text, learning settings, and relevant prior item summaries are used for lesson generation. Without one, OCR runs in the browser and images/text are saved only to the private app storage. Tesseract downloads its worker, WASM runtime, and language data on first use.
 
@@ -34,7 +34,8 @@ The integration follows the official [Responses structured-output format](https:
 - `extraction.ts`: OCR region creation, interface heuristics, review gating.
 - `model.ts` / `generation.ts`: model transport, layout, contextual generation, semantic grading.
 - `validation.ts` / `quality-loop.ts`: deterministic provenance/answer checks and bounded semantic revision.
-- `source-recall.ts`: transparent, limited no-model fallback.
+- `source-recall.ts` / `text-matching.ts`: transparent no-model fallback, Unicode-aware source matching and exact source excerpts.
+- `lib/read-screenshot.ts`: bounded OCR layout retries and manual recovery.
 - `scheduling.ts`: objective grading, different-question retries, and stored review intervals.
 - `storage.ts`: owner-scoped source links, contextual item identities, history-preserving plan writes.
 - `app/api/v2/`: authenticated upload, review, profile, generation, session, and answer endpoints.

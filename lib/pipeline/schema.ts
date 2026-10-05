@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {compactJapaneseSpacing} from './text-matching.ts';
 
 export const languages = {en:'English',es:'Spanish',fr:'French',de:'German',ko:'Korean',ja:'Japanese'} as const;
 export const profileSchema=z.object({targetLanguage:z.enum(['en','es','fr','de','ko','ja']),level:z.enum(['A1','A2','B1','B2','C1','C2']),goal:z.string().trim().min(3).max(240)}).strict();
@@ -22,7 +23,9 @@ export type Session={id:string;captureId:string;profile:Profile;items:LearningIt
 export type PublicSession={id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;notice?:string};
 export function publicSession(s:Session):PublicSession{const e=s.queue[s.index];return {id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,exercise:e?((({answer:_a,alternatives:_b,explanation:_c,...rest})=>rest)(e)):null,feedback:e?s.feedback[e.id]??null:null,answer:e?s.answers[e.id]??'':'',assisted:e?!!s.assisted[e.id]:false};}
 export const normalized=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().replace(/[’‘]/g,"'").replace(/\s+/g,' ').trim();
-export const answerKey=(s:string)=>normalized(s).replace(/[.!?。！？]+$/u,'').trim();
+export const answerKey=(s:string)=>compactJapaneseSpacing(normalized(s)).replace(/[.!?。！？]+$/u,'').trim();
+export const sourceRecallNotice='Source recall v2. Contextual lessons need a model connection.';
+export const recallPrompt='Complete the captured text with its original word or phrase.';
 export const identity=(i:LearningItem)=>[i.language,normalized(i.form),normalized(i.sense)].join('|');
 
 // Strict JSON Schema and runtime Zod validation use the same simple schema tree.
