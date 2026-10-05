@@ -25,6 +25,34 @@ const openId=session.exercise.id;
 session=(await request('answer',{sessionId:sid,exerciseId:openId,action:'check',answer:'I look forward to our next meeting.'})).data.session;assert.equal(session.feedback.outcome,'uncertain');
 assert.equal((await request('answer',{sessionId:sid,exerciseId:openId,action:'continue'})).status,400);
 session=(await request('answer',{sessionId:sid,exerciseId:openId,action:'resolve',outcome:'correct'})).data.session;assert.equal(session.feedback.assisted,true);
-const resumed=await request('session',{resume:sid});assert.equal(resumed.data.session.feedback.outcome,'correct');
-const after=(await request('library')).data;const saved=after.captures.find(c=>c.id===capture.id);assert.equal(saved.text,'We look forward to seeing you.');assert.equal(saved.extraction.regions[0].correction,'We look forward to meeting you.');assert.ok(after.sources.some(s=>s.capture_id===capture.id));assert.ok(after.schedule.some(s=>s.item_id===generated.data.plan.items[0].id));
+const resumed=await request('session',{resume:sid});assert.equal(resumed.data.session.feedback.outcome,'uncertain');assert.equal(resumed.data.session.feedback.method,'learner');assert.equal(resumed.data.session.feedback.reviewDecision,'confident');
+session=(await request('answer',{sessionId:sid,exerciseId:openId,action:'continue'})).data.session;
+assert.equal(session.done,true);assert.equal(session.summary.needsPractice,1);assert.equal(session.summary.unverified,1);assert.equal(session.summary.independentRecall,0);
+const after=(await request('library')).data;
+assert.equal(after.lastSession.id,sid);assert.equal(after.lastSession.summary.items[0].unverified[0].decision,'confident');const saved=after.captures.find(c=>c.id===capture.id);assert.equal(saved.text,'We look forward to seeing you.');assert.equal(saved.extraction.regions[0].correction,'We look forward to meeting you.');assert.ok(after.sources.some(s=>s.capture_id===capture.id));assert.ok(after.schedule.some(s=>s.item_id===generated.data.plan.items[0].id));
 console.log('PASS: auth, origins, real image upload, review gate, immutable source, separate corrections, validated fallback, private answer rules, retry variants, idempotent grading, uncertain-answer review, durable resume and schedule.');
+
+const itemId=generated.data.plan.items[0].id;
+async function timing(){return (await request('library')).data.schedule.find(i=>i.item_id===itemId);}
+const applicationPrompts=new Set();
+for(const decision of ['confident','practise','unsure']){
+ session=(await request('session',{captureId:capture.id})).data.session;
+ assert.equal(session.summary,null);assert.equal(session.teaching,null);
+ const id=session.id;
+ session=(await request('answer',{sessionId:id,exerciseId:session.exercise.id,action:'check',answer:'look forward to'})).data.session;
+ assert.equal(session.feedback.method,'objective');assert.equal(session.teaching.basis,'reference');
+ const beforeReview=await timing();
+ session=(await request('answer',{sessionId:id,exerciseId:session.exercise.id,action:'continue'})).data.session;
+ applicationPrompts.add(session.exercise.prompt);
+ session=(await request('answer',{sessionId:id,exerciseId:session.exercise.id,action:'check',answer:'I look forward to meet you yesterday.'})).data.session;
+ session=(await request('answer',{sessionId:id,exerciseId:session.exercise.id,action:'resolve',decision})).data.session;
+ assert.equal(session.feedback.outcome,'uncertain');assert.equal(session.feedback.method,'learner');
+ assert.deepEqual(await timing(),beforeReview,'Self-review must preserve the complete scheduling record');
+ session=(await request('answer',{sessionId:id,exerciseId:session.exercise.id,action:'continue'})).data.session;
+ assert.equal(session.summary.independentRecall,1);assert.equal(session.summary.unverified,1);
+}
+assert.equal(applicationPrompts.size,3);
+assert.equal((await timing()).streak,3);
+const focused=await request('session',{captureId:capture.id,focusItemIds:[itemId]});assert.equal(focused.status,200);assert.equal(focused.data.session.total,2);
+assert.equal((await request('session',{captureId:capture.id,focusItemIds:['another-users-item']})).status,400);
+console.log('PASS: all three self-review decisions preserve recall, three task variants, persistent honest recaps, targeted practice and ownership validation.');

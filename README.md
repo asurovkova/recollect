@@ -7,8 +7,8 @@ A private screenshot language-learning prototype with two views: **Library** and
 1. Save a target language, approximate CEFR level, and learning goal once. Edit these in Learning settings later.
 2. Import a PNG, JPEG, or WebP screenshot (up to 8 MB). OCR retains text regions, reading order, coordinates, and confidence. English, Spanish, French, German, Korean, and Japanese are available.
 3. OCR retries a text-block and sparse-text layout when the first pass is empty or uncertain. If reading cannot finish, the screenshot can still be saved with a manual correction. When prompted, select relevant regions and check their language. Deselect interface text. Mark areas of interest and enter corrections separately; original OCR text and the original image remain saved.
-4. Practise one question at a time: answer, check, read concise feedback, continue. View source shows the exact region and marks an unanswered question as assisted.
-5. Sessions and responses persist. The Practice view shows material ready for review. There are no notifications or background photo-library access.
+4. Practise one question at a time: answer, check, read feedback, continue. Feedback distinguishes objective answer matching, AI assessment, and unverified self-review. Confidence is never labelled correctness. Choose “I’m still unsure” to save an unresolved response. View source shows the exact region and marks an unanswered question as assisted.
+5. Sessions and responses persist. Completion shows independent recall, mistakes, unverified sentence use, and the next recall date for each item. Reopen the latest recap from Practice or start focused practice from it. Source-only writing tasks rotate between a goal-related message, a question, and a short dialogue. The Practice view shows material ready for review. There are no notifications or background photo-library access.
 
 ## Model connection and fallback
 
@@ -36,7 +36,9 @@ The integration follows the official [Responses structured-output format](https:
 - `validation.ts` / `quality-loop.ts`: deterministic provenance/answer checks and bounded semantic revision.
 - `source-recall.ts` / `text-matching.ts`: transparent no-model fallback, Unicode-aware source matching and exact source excerpts.
 - `lib/read-screenshot.ts`: bounded OCR layout retries and manual recovery.
-- `scheduling.ts`: objective grading, different-question retries, and stored review intervals.
+- `scheduling.ts`: objective grading, different-question retries, and independent-recall review intervals.
+- `feedback.ts` / `variation.ts`: explicit feedback provenance, honest recaps, source-based teaching notes, and rotating application tasks.
+- `app/practice-feedback.tsx`: teaching feedback and persistent per-item session recap.
 - `storage.ts`: owner-scoped source links, contextual item identities, history-preserving plan writes.
 - `app/api/v2/`: authenticated upload, review, profile, generation, session, and answer endpoints.
 - `app/studio.tsx`: minimal UI, with Radix dialogs and responsive layouts.
@@ -45,7 +47,7 @@ D1 holds records, profiles, item/source links, sessions, attempts, and schedules
 
 The additive `0001_fair_vermin.sql` migration preserves all original captures, preferences, and `review_events`. Older captures remain visible and can be reviewed to create new practice; they have no historic OCR coordinates. When an old term becomes a new item, its legacy review IDs are imported once. Original review rows are retained. The v1 API and learning module remain only for compatibility.
 
-Review intervals are simple prototype rules: successful unassisted responses progress through 1, 3, 7, 14, and 30 days; incorrect or assisted responses return after one day. Uncertain responses are not scheduled until reviewed. This is not a validated learning-outcome model. Model quality checks reduce errors but do not guarantee correctness.
+Review intervals are simple prototype rules: independently checked recall progresses through 1, 3, 7, 14, and 30 days; an incorrect independent recall returns after one day. Source-assisted practice, recognition, sentence application, and self-review do not advance or reset recall scheduling. Unverified self-reviews remain in the session record rather than being counted as correct/incorrect attempts. Existing historical schedule values are preserved; this change prevents future overwrites. This is not a validated learning-outcome model. Model quality checks reduce errors but do not guarantee correctness.
 
 ## Development
 
@@ -73,3 +75,9 @@ npm run build
 The API check requires the local preview **without a model key** and creates authored test captures; it does not delete learner data. It checks authentication, origin protection, image storage, review gates, immutable original text, separate corrections, answer secrecy, idempotency, retry variants, uncertain-answer review, session resumption, and stored schedules.
 
 Unit checks cover source provenance, uncertainty, selection limits, sense identity, answer leakage, duplicate questions, objective grading, scheduling, and the one-revision limit. Browser QA covers real OCR upload, region selection, settings, practice feedback, source highlighting, persistence, and desktop/mobile layouts. Live model responses have not been tested because no key is configured.
+
+## Engagement fixes (October 2026)
+
+Teaching feedback displays the item’s saved contextual sense, explanation and source when model-generated lesson notes exist. The no-model path can repeat explicit definition notes in the source verbatim (e.g. “reliable — someone you can trust”). It also includes one general, attributed [Cambridge reference tip for “look forward to”](https://dictionary.cambridge.org/grammar/british-grammar/word-patterns-look-forward-to). This is a small curated reference, not a dictionary service or a semantic assessment of an answer. Other items explicitly state that their contextual meaning is unavailable and guide comparison with the source. Broad contextual explanations and automatic sentence assessment still need a model connection.
+
+The 14 engagement regression tests cover self-review provenance (including old sessions), every confidence choice, schedule preservation, independent recall progression, recap accuracy and answer visibility, source definitions and task variation. The API test verifies all three self-review decisions leave the complete schedule record unchanged, with three successful recall sessions reaching streak 3, plus durable recaps and ownership-checked focused practice. Browser checks cover wrong recall, an incorrect sentence marked confident, uncertain responses, a persisted recap, focused task variation, keyboard submission and the 320px mobile layout. These are software checks, not findings from real learners. The proposed 20-student study has not been run; engagement or learning gains are not established.
