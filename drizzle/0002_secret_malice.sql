@@ -1,0 +1,1 @@
+ALTER TABLE `capture_content` ADD `selected_forms` text;

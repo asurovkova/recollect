@@ -3,7 +3,7 @@ export const captures=sqliteTable('captures',{id:text('id').primaryKey(),userId:
 export const preferences=sqliteTable('preferences',{userId:text('user_id').primaryKey(),goal:text('goal').notNull()});
 export const reviews=sqliteTable('review_events',{id:text('id').primaryKey(),userId:text('user_id').notNull(),cardId:text('card_id').notNull(),correct:integer('correct').notNull(),createdAt:text('created_at').notNull()},t=>[index('idx_reviews_user_card').on(t.userId,t.cardId)]);
 export const learnerProfiles=sqliteTable('learner_profiles',{userId:text('user_id').primaryKey(),data:text('data').notNull()});
-export const captureContent=sqliteTable('capture_content',{captureId:text('capture_id').primaryKey(),extraction:text('extraction').notNull(),plan:text('plan'),profile:text('profile'),notice:text('notice')});
+export const captureContent=sqliteTable('capture_content',{captureId:text('capture_id').primaryKey(),extraction:text('extraction').notNull(),plan:text('plan'),profile:text('profile'),notice:text('notice'),selectedForms:text('selected_forms')});
 export const learningItems=sqliteTable('learning_items',{id:text('id').primaryKey(),userId:text('user_id').notNull(),identity:text('identity').notNull(),data:text('data').notNull()},t=>[index('idx_learning_owner').on(t.userId)]);
 export const itemSources=sqliteTable('item_sources',{id:text('id').primaryKey(),itemId:text('item_id').notNull(),captureId:text('capture_id').notNull(),regionId:text('region_id').notNull(),quote:text('quote').notNull()});
 export const practiceSessions=sqliteTable('practice_sessions',{id:text('id').primaryKey(),userId:text('user_id').notNull(),data:text('data').notNull(),updatedAt:text('updated_at').notNull()});

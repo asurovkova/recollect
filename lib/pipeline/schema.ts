@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {applicationStyles,applicationPrompt,type ApplicationStyle} from './variation.ts';
 import {compactJapaneseSpacing} from './text-matching.ts';
 import {feedbackFor,summaryFor,teachingFor,type Teaching,type SessionSummary} from './feedback.ts';
 
@@ -19,10 +20,10 @@ export type Exercise=z.infer<typeof exerciseSchema>;
 export const planSchema=z.object({items:z.array(itemSchema).max(4),exercises:z.array(exerciseSchema).max(12),reviewItems:z.array(z.object({regionId:z.string(),reason:z.string().max(240)})).max(20),collectionMatches:z.array(z.object({topic:z.string(),itemIds:z.array(z.string())})).max(4)}).strict();
 export type Plan=z.infer<typeof planSchema>;
 export type Feedback={outcome:'correct'|'incorrect'|'uncertain';expected:string;explanation:string;assisted?:boolean;method?:'objective'|'model'|'unavailable'|'learner';scheduleNote?:string;reviewDecision?:'confident'|'practise'|'unsure'};
-export type SavedCapture={id:string;title:string;text:string;imageKey:string|null;createdAt:string;extraction:Extraction|null;plan:Plan|null;notice:string|null;collection:string};
+export type SavedCapture={id:string;title:string;text:string;imageKey:string|null;createdAt:string;extraction:Extraction|null;plan:Plan|null;notice:string|null;collection:string;selectedForms?:string[]};
 export type Session={id:string;captureId:string;profile:Profile;items:LearningItem[];queue:Exercise[];index:number;feedback:Record<string,Feedback>;answers:Record<string,string>;assisted:Record<string,boolean>;retried:string[]};
-export type PublicSession={id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;teaching:Teaching|null;summary:SessionSummary|null;notice?:string};
-export function publicSession(s:Session):PublicSession{const e=s.queue[s.index],f=e?s.feedback[e.id]:null,item=e?s.items.find(i=>i.id===e.itemId):null;return {id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,exercise:e?((({answer:_a,alternatives:_b,explanation:_c,...rest})=>rest)(e)):null,feedback:e&&f?feedbackFor(e,f):null,answer:e?s.answers[e.id]??'':'',assisted:e?!!s.assisted[e.id]:false,teaching:f&&item?teachingFor(item):null,summary:!e?summaryFor(s):null};}
+export type PublicSession={id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;teaching:Teaching|null;summary:SessionSummary|null;notice?:string;writingStyle?:ApplicationStyle|null};
+export function publicSession(s:Session):PublicSession{const e=s.queue[s.index],f=e?s.feedback[e.id]:null,item=e?s.items.find(i=>i.id===e.itemId):null;return {id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,writingStyle:e?.type==='open'&&item?applicationStyles.find(style=>applicationPrompt(item,s.profile,style)===e.prompt)??null:null,exercise:e?((({answer:_a,alternatives:_b,explanation:_c,...rest})=>rest)(e)):null,feedback:e&&f?feedbackFor(e,f):null,answer:e?s.answers[e.id]??'':'',assisted:e?!!s.assisted[e.id]:false,teaching:f&&item?teachingFor(item):null,summary:!e?summaryFor(s):null};}
 export const normalized=(s:string)=>s.normalize('NFKC').toLocaleLowerCase().replace(/[’‘]/g,"'").replace(/\s+/g,' ').trim();
 export const answerKey=(s:string)=>compactJapaneseSpacing(normalized(s)).replace(/[.!?。！？]+$/u,'').trim();
 export const sourceRecallNotice='Source recall v2. Contextual lessons need a model connection.';

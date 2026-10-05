@@ -69,6 +69,8 @@ assert.match(custom.feedback.scheduleNote,/not due yet/);
 custom=(await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'continue'})).data.session;
 custom=(await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'style',style:'rewrite'})).data.session;
 assert.match(custom.exercise.prompt,/Adapt the source/);
+assert.equal(custom.writingStyle,'rewrite');
+assert.equal((await request('session',{resume:custom.id})).data.session.writingStyle,'rewrite');
 assert.equal((await request('answer',{sessionId:custom.id,exerciseId:custom.exercise.id,action:'style',style:'invalid'})).status,400);
 console.log('PASS: same-day scheduling, title-only preservation and validated writing-task choice.');
 
@@ -84,3 +86,17 @@ const afterParallel=(await request('library')).data.schedule.find(i=>i.item_id==
 for(let n=0;n<5;n++){const s=(await request('session',{captureId:fresh.id})).data.session;const result=await request('answer',{sessionId:s.id,exerciseId:s.exercise.id,action:'check',answer:n===4?'wrong':'look forward to'});assert.match(result.data.session.feedback.scheduleNote,/not due yet/);}
 assert.deepEqual((await request('library')).data.schedule.find(i=>i.item_id===freshPlan.items[0].id),afterParallel);
 console.log('PASS: concurrent sessions advance one interval only; five immediate repeats, including an error, preserve the exact due timestamp.');
+
+// Words are saved independently of lessons, including an intentional empty selection.
+const formsCapture=(await request('library')).data.captures.find(c=>c.id===fresh.id);
+let wordsSaved=await request('captures',{id:fresh.id,extraction:formsCapture.extraction,selectedForms:['look forward to']});
+assert.equal(wordsSaved.status,200);assert.ok(wordsSaved.data.capture.plan,'Unchanged words preserve the lesson');
+assert.deepEqual((await request('library')).data.captures.find(c=>c.id===fresh.id).selectedForms,['look forward to']);
+wordsSaved=await request('captures',{id:fresh.id,extraction:formsCapture.extraction,selectedForms:['meeting']});
+assert.equal(wordsSaved.data.capture.plan,null,'Changed words invalidate the old lesson');
+assert.deepEqual((await request('library')).data.captures.find(c=>c.id===fresh.id).selectedForms,['meeting']);
+assert.equal((await request('captures',{id:fresh.id,extraction:formsCapture.extraction,selectedForms:['a','b','c','d','e']})).status,400);
+assert.deepEqual((await request('library')).data.captures.find(c=>c.id===fresh.id).selectedForms,['meeting'],'Rejected edits preserve saved words');
+assert.equal((await request('captures',{id:fresh.id,extraction:formsCapture.extraction,selectedForms:[]})).status,200);
+assert.deepEqual((await request('library')).data.captures.find(c=>c.id===fresh.id).selectedForms,[]);
+console.log('PASS: durable selected words, unchanged lesson preservation, changed-word invalidation, clear selection, invalid-input recovery and writing-choice resume.');
