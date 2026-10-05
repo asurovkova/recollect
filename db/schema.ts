@@ -1,0 +1,4 @@
+import {sqliteTable,text,integer,index} from 'drizzle-orm/sqlite-core';
+export const captures=sqliteTable('captures',{id:text('id').primaryKey(),userId:text('user_id').notNull(),title:text('title').notNull(),text:text('text').notNull(),terms:text('terms').notNull(),collection:text('collection').notNull(),source:text('source').notNull(),imageKey:text('image_key'),createdAt:text('created_at').notNull()},t=>[index('idx_captures_user_created').on(t.userId,t.createdAt)]);
+export const preferences=sqliteTable('preferences',{userId:text('user_id').primaryKey(),goal:text('goal').notNull()});
+export const reviews=sqliteTable('review_events',{id:text('id').primaryKey(),userId:text('user_id').notNull(),cardId:text('card_id').notNull(),correct:integer('correct').notNull(),createdAt:text('created_at').notNull()},t=>[index('idx_reviews_user_card').on(t.userId,t.cardId)]);

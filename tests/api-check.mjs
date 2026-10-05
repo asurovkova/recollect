@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import {readFile,writeFile} from 'node:fs/promises';
+const base=process.env.TEST_BASE_URL||'http://127.0.0.1:5179';
+const signIn=await fetch(base+'/signin-with-chatgpt?return_to=/',{redirect:'manual'});
+const cookie=signIn.headers.get('set-cookie')?.split(';')[0];
+assert.ok(cookie,'local preview sign-in returned a cookie');
+const headers={Cookie:cookie,Origin:base};
+assert.equal((await fetch(base+'/api/library')).status,401);
+const library=await fetch(base+'/api/library',{headers});assert.equal(library.status,200);
+assert.equal((await fetch(base+'/api/goal',{method:'POST',headers:{...headers,Origin:'https://unrelated.example','Content-Type':'application/json'},body:JSON.stringify({goal:'Test'})})).status,403);
+const id=crypto.randomUUID(),reviewId=crypto.randomUUID();
+const metadata={id,title:'API verification example',source:'Automated prototype check',collection:'Test collection',text:'A consistent routine can help you become more resilient.',terms:['consistent','resilient']};
+const form=new FormData();form.set('metadata',JSON.stringify(metadata));form.set('image',new Blob([await readFile(new URL('./fixtures/reading-example.png',import.meta.url))],{type:'image/png'}),'test.png');
+let r=await fetch(base+'/api/captures',{method:'POST',headers,body:form});assert.equal(r.status,201);const saved=await r.json();assert.equal(saved.cardCount,2);assert.ok(saved.capture.imageKey);
+r=await fetch(base+'/api/image/'+id,{headers});assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'image/png');assert.ok((await r.arrayBuffer()).byteLength>1000);
+const bad=new FormData();bad.set('metadata',JSON.stringify({...metadata,id:crypto.randomUUID(),terms:['absent']}));assert.equal((await fetch(base+'/api/captures',{method:'POST',headers,body:bad})).status,400);
+const review={id:reviewId,cardId:id+':consistent',correct:true};
+for(let i=0;i<2;i++){r=await fetch(base+'/api/review',{method:'POST',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify(review)});assert.equal(r.status,200);}
+const after=await (await fetch(base+'/api/library',{headers})).json();assert.ok(after.captures.some(c=>c.id===id));assert.equal(after.reviews.find(r=>r.cardId===review.cardId).attempts,1);
+await writeFile('.sites-runtime/api-check-ids.json',JSON.stringify({captureId:id,reviewId}));
+console.log('PASS: authentication, origin protection, real upload, image retrieval, invalid-term rejection, durable library, idempotent review.');

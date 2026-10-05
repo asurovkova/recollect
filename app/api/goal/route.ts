@@ -1,0 +1,2 @@
+import {db,user,json,failure,boundedJson,string} from '@/lib/server';
+export async function POST(request:Request){try{const owner=await user(request);const data=await boundedJson(request);const goal=string(data.goal,'learning goal',240);await db().prepare('INSERT INTO preferences (user_id,goal) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET goal=excluded.goal').bind(owner,goal).run();return json({goal})}catch(e){return failure(e)}}
