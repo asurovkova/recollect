@@ -35,3 +35,6 @@
 .reflection-panel label { display:grid; gap:.5rem; font-weight:500; }
 .reflection-panel textarea { width:100%; resize:vertical; border:1px solid #cdcfc6; border-radius:8px; background:white; padding:.8rem; font:inherit; min-height:100px; }
 @media(max-width:480px) { .coaching-panel,.reflection-panel { padding:1rem; } .coaching-panel button,.reflection-panel button { white-space:normal; text-align:left; } }
+.coaching-panel.incorrect { background:#fff8ef; border-color:#e5c69e; }
+.coaching-panel.incorrect h3 { color:#80450d; }
+.coaching-panel:focus-visible { outline:2px solid #3656bd; outline-offset:4px; }

@@ -20,7 +20,7 @@ export function feedbackFor(e:Exercise,f:Feedback):Feedback{
 export function feedbackHeading(f:Feedback){
  if(f.method==='learner')return f.reviewDecision==='confident'?'Self-reviewed · not checked':f.reviewDecision==='practise'?'Marked for more practice':'Still unsure · saved for review';
  if(f.outcome==='uncertain')return 'Sentence use not checked';
- if(f.method==='objective')return f.outcome==='correct'?(f.assisted?'Matched with help':'Answer matched'):'Compare the expected answer';
+ if(f.method==='objective')return f.outcome==='correct'?(f.assisted?'Correct · with help':'Correct'):'Incorrect';
  return f.outcome==='correct'?'AI assessment: looks correct':'AI assessment: needs revision';
 }
 export function reviewResolved(f:Feedback){return f.outcome!=='uncertain'||!!f.reviewDecision;}
@@ -37,7 +37,7 @@ export function summaryFor(s:Session){
    assistedRecall:attempts.some(({e,f})=>e.phase==='recall'&&f.method==='objective'&&f.outcome==='correct'&&f.assisted),
    checkedApplication:attempts.some(({e,f})=>e.phase==='application'&&f.method==='model'&&f.outcome==='correct'),
    mistakes:attempts.filter(({f})=>f.outcome==='incorrect').map(({e,f,answer})=>({prompt:e.prompt,answer,expected:f.expected,explanation:f.explanation,isExample:e.type==='open'})),
-   unverified:attempts.filter(({f})=>f.outcome==='uncertain').map(({e,f,answer})=>({prompt:e.prompt,answer,decision:s.feedback[e.id]?.reviewDecision??f.reviewDecision??'unsure'}))}];
+   unverified:attempts.filter(({f})=>f.outcome==='uncertain').map(({e,f,answer})=>({prompt:e.prompt,answer,skipped:!!f.skipped,decision:s.feedback[e.id]?.reviewDecision??f.reviewDecision??'unsure'}))}];
  });
  return {answered:Object.keys(s.feedback).length,independentRecall:items.filter(i=>i.independentRecall).length,needsPractice:items.filter(i=>i.mistakes.length||i.unverified.some(a=>a.decision==='practise')).length,unverified:items.filter(i=>i.unverified.length).length,items};
 }

@@ -46,6 +46,7 @@ export function publicCoaching(s:Session,e:Exercise){
  const step=s.tutor.steps[e.id]??{stage:'attempt' as const,hints:[],attempts:[],revealed:false};
  const memory=s.tutor.memory[e.itemId];
  return {stage:step.stage,attemptCount:step.attempts.length,hints:step.hints,canHint:step.stage!=='feedback'&&step.hints.length<2,revealed:step.revealed,
+  result:s.feedback[e.id]?{outcome:s.feedback[e.id].outcome,method:s.feedback[e.id].method}:null,
   assessment:s.tutor.newIds.includes(e.itemId)?'initial':s.tutor.dueIds.includes(e.itemId)?'due':'practice',
   // Earlier notes can contain answers. Keep them behind the initial recall attempt.
   memory:e.phase==='recall'&&!step.attempts.length?null:memory??null};

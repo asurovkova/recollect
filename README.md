@@ -85,10 +85,12 @@ The 14 engagement regression tests cover self-review provenance (including old s
 
 ## Guided practice
 
-New practice sessions separate an initial attempt from teaching. An incorrect answer offers up to two hints and keeps the same task editable. Learners can reveal the explanation at any time; after five unsuccessful attempts the explanation is shown automatically. AI sentence feedback names a difficulty, offers a cue without a completed answer, and checks a revision against the current writing task. AI assessments remain explicitly labelled.
+New practice sessions separate an initial attempt from teaching. An incorrect answer offers up to two hints and keeps the same task editable. Check always reports a visible result. Learners can choose Next after any assessed answer, Skip for now before answering, or reveal the explanation at any time; after five unsuccessful attempts the explanation is shown automatically. AI sentence feedback names a difficulty, offers a cue without a completed answer, and checks a revision against the current writing task. AI assessments remain explicitly labelled.
 
 Due recall tasks appear before recognition and application. The original attempt is retained when an answer is revised. Source views, hints, earlier teaching, overlapping source text, and recent practice are treated conservatively as help; an assisted revision cannot advance an independent recall interval. A first learning encounter establishes a review for the next day without claiming retention. Existing sessions remain readable.
 
 Attempt history (including tentative AI difficulty categories) and optional reflections are saved in D1. Later sessions use recent difficulties to choose a writing task and inform feedback; learners can choose another task. This is task-specific history, not a personality model. Saved reflections are withheld before a first recall attempt because they can contain the answer. Learning gains and engagement still require a study with real learners.
 
 Regression checks: `node --experimental-strip-types --test tests/*.test.ts` and `node node_modules/typescript/bin/tsc --noEmit`. Database changes use the generated migrations in `drizzle/`.
+
+Older browser tabs that omit the attempt counter receive compatible feedback. Duplicate or stale submissions restore the saved result, and concurrent updates converge on the current session without double-counting attempts or skipping questions.
