@@ -4,6 +4,8 @@ import {findForms} from './text-matching.ts';
 
 export type Rejection={id:string;reason:string};
 export function validatePlan(plan:Plan,extraction:Extraction,profile:Profile,captureId:string){
+ // Normalize presentation only; the exact source and answer are still checked below.
+ plan={...plan,items:plan.items.map(item=>({...item,form:item.source.quote.includes(item.form)?item.form:findForms(item.source.quote,item.form,item.language)[0]?.text??item.form})),exercises:plan.exercises.map(e=>e.type==='cloze'?{...e,prompt:e.prompt.replace(/_{4,}/g,'____'),context:e.context.replace(/_{4,}/g,'____')}:e)};
  const rejected:Rejection[]=[];
  const regions=safeRegions(extraction,profile);
  const validSource=(s:Exercise['source'])=>s.captureId===captureId&&regions.some(r=>r.id===s.regionId&&textOf(r).includes(s.quote));

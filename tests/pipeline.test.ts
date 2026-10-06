@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {defaultProfile,identity,planSchema,jsonSchema,type Extraction,type Plan,type Session} from '../lib/pipeline/schema.ts';
 import {regionsFromOCR,needsReview} from '../lib/pipeline/extraction.ts';
-import {sourceRecallPlan} from '../lib/pipeline/source-recall.ts';
+import {sourceRecallPlan,ensureSourceRecall} from '../lib/pipeline/source-recall.ts';
 import {validatePlan} from '../lib/pipeline/validation.ts';
 import {gradeObjective,schedule,addRetry} from '../lib/pipeline/scheduling.ts';
 const extraction:Extraction={width:600,height:300,method:'ocr',issues:[],regions:[{id:'r1',rawText:'We look forward to seeing you.',correction:null,bbox:{x:.1,y:.2,width:.8,height:.1},confidence:96,language:'en',kind:'sentence',selected:true,highlighted:false,confirmed:true,issues:[]}]};
@@ -38,4 +38,42 @@ test('an immediately upcoming retry variant moves later instead of being duplica
  const p=fixture();const other={...p.exercises[0],id:'other-question',itemId:'other'};
  const s:Session={id:'s',captureId:'capture',profile:defaultProfile,items:p.items,queue:[p.exercises[0],p.exercises[1],other],index:0,feedback:{},answers:{},assisted:{},retried:[]};
  addRetry(s,p.exercises[0],gradeObjective(p.exercises[0],'wrong'),p.exercises);assert.equal(s.queue.length,3);assert.equal(s.queue[1].id,other.id);assert.equal(s.queue[2].type,'open');
+});
+
+test('model formatting differences preserve exact source wording and recall',()=>{
+ const x=structuredClone(extraction);x.regions[0].rawText='Look forward to seeing you.';
+ const p=sourceRecallPlan(x,defaultProfile,'capture',['Look forward to']);
+ p.items[0].form='look forward to';p.exercises[0].context=p.exercises[0].context.replace('____','_____');
+ const result=validatePlan(p,x,defaultProfile,'capture');
+ assert.equal(result.rejected.length,0);assert.equal(result.plan.items[0].form,'Look forward to');
+ assert.equal(result.plan.exercises[0].context.replace('____',result.plan.exercises[0].answer),x.regions[0].rawText);
+});
+
+test('a failed model revision cannot discard already validated practice',async()=>{
+ const {checkedGeneration}=await import('../lib/pipeline/quality-loop.ts');let round=0;
+ const result=await checkedGeneration({extraction,profile:defaultProfile,captureId:'capture',produce:async()=>fixture(),audit:async p=>({rejectedItems:++round===2?[{id:p.items[0].id,reason:'Bad revised item'}]:[],rejectedExercises:[{id:p.exercises[0].id,reason:'Ambiguous question'}],rejectedMatches:[]})});
+ assert.equal(result.plan.items.length,1);assert.equal(result.plan.exercises.length,1);assert.equal(result.plan.exercises[0].type,'open');
+});
+
+test('fully rejected AI output cannot be saved as an empty lesson',async()=>{
+ const {checkedGeneration}=await import('../lib/pipeline/quality-loop.ts');
+ await assert.rejects(()=>checkedGeneration({extraction,profile:defaultProfile,captureId:'capture',produce:async()=>fixture(),audit:async p=>({rejectedItems:p.items.map(i=>({id:i.id,reason:'Unsupported'})),rejectedExercises:[],rejectedMatches:[]})}),/No validated lesson/);
+});
+
+test('accepted AI items retain exact-source recall even when generated recall is omitted',()=>{
+ const p=fixture();p.items[0].sense='anticipate with pleasure';p.items[0].explanation='Use a noun or an -ing verb after the phrase.';
+ p.exercises=p.exercises.filter(e=>e.phase==='application');
+ const fixed=ensureSourceRecall(p,extraction,defaultProfile,'capture');
+ assert.equal(fixed.exercises.length,2);const recall=fixed.exercises.find(e=>e.phase==='recall')!;
+ assert.equal(recall.context.replace('____',recall.answer),extraction.regions[0].rawText);
+ assert.equal(recall.itemId,p.items[0].id);assert.match(recall.explanation,/-ing/);
+ assert.equal(ensureSourceRecall(fixed,extraction,defaultProfile,'capture').exercises.length,2);
+ assert.deepEqual(p.exercises.map(e=>e.type),['open']);
+});
+
+test('source recall coverage respects lesson schema limits',()=>{
+ const p=fixture();p.items[0].explanation='a'.repeat(400);
+ p.exercises=Array.from({length:12},(_,n)=>({...p.exercises[1],id:`variant-${n}`,prompt:`Write sentence ${n+1} using the phrase.`}));
+ const fixed=ensureSourceRecall(p,extraction,defaultProfile,'capture');
+ assert.equal(fixed.exercises.length,12);assert.ok(fixed.exercises.some(e=>e.phase==='recall'));assert.ok(planSchema.safeParse(fixed).success);
 });

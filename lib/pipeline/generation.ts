@@ -3,7 +3,7 @@ import {type Extraction,type Profile,type LearningItem,type Plan,type Exercise,t
 import {safeRegions} from './extraction';
 import {checkedGeneration} from './quality-loop';
 import {modelAvailable,structured} from './model';
-import {sourceRecallPlan} from './source-recall';
+import {sourceRecallPlan,ensureSourceRecall} from './source-recall';
 
 export async function interpretLayout(extraction:Extraction,image:string){
  if(!modelAvailable())return extraction;
@@ -21,10 +21,11 @@ export async function generate(extraction:Extraction,profile:Profile,captureId:s
  if(!modelAvailable())return {plan:sourceRecallPlan(extraction,profile,captureId,selectedForms),notice:sourceRecallNotice};
  const candidates=(existing as Array<LearningItem&{missed:number;attempts:number}>).filter(i=>i.language===profile.targetLanguage).map(({id,language,form,sense,topic,missed,attempts})=>({id,language,form,sense,topic,missed,attempts}));
  const input={captureId,profile,regions:safeRegions(extraction,profile),existing:candidates,learnerSelectedForms:selectedForms};
- return checkedGeneration({extraction,profile,captureId,produce:async(previous,issues,revision)=>{
-  try{return await structured('lesson',planSchema,generationInstruction+(revision?' Revise once using the supplied validation failures; omit content you cannot fix.':''),{...input,previous,issues});}
+ const result=await checkedGeneration({extraction,profile,captureId,produce:async(previous,issues,revision)=>{
+  try{return await structured('lesson',planSchema,generationInstruction+' If learnerSelectedForms is nonempty, teach ONLY those forms; do not add other targets. Copy each form with its exact source capitalization and punctuation. For one selected target, 3–4 focused exercises are enough: meaning, source cloze, and open application. A cloze blank is exactly four underscores (____); copy every other character, including final punctuation, from the source. Do not duplicate the sentence in the cloze prompt; use: Complete the captured text with its original word or phrase. Do not produce reorder tasks requiring more than four tokens. Omit extra exercises rather than inventing weak targets.'+(revision?' Revise once using the supplied validation failures; retain already valid items and exercises and omit content you cannot fix.':''),{...input,previous,issues});}
   catch(e){if(e instanceof z.ZodError||e instanceof SyntaxError)return null;throw e;}
  },audit:plan=>audit(plan,extraction,profile,candidates)});
+ return {...result,plan:ensureSourceRecall(result.plan,extraction,profile,captureId)};
 }
 
 export async function gradeOpen(exercise:Exercise,item:LearningItem,answer:string):Promise<Feedback>{
