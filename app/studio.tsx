@@ -68,7 +68,18 @@ export default function Studio(){
   setBusy(library.modelAvailable?'Checking the screenshot…':'Saving screenshot…');const form=new FormData();form.set('image',file);form.set('extraction',JSON.stringify(extraction));const result=await api('extract',form);await refresh();
   if((!result.capture.extraction||needsReview(result.capture.extraction,active))||!library.modelAvailable)openReview(result.capture);else await build(result.capture);
  });if(input.current)input.current.value='';}
- async function build(c:SavedCapture,selectedForms?:string[]){setBusy('Preparing and checking practice…');const result=await api('generate',{id:c.id,forms:selectedForms??c.selectedForms??c.plan?.items.map(i=>i.form)??[]});await refresh();if(!result.plan.exercises.length||result.plan.reviewItems.length){openReview({...c,plan:result.plan},selectedForms);throw new Error(result.plan.reviewItems.map(i=>i.reason).join(' ')||'There is not enough certain language content for practice.');}const data=await api('session',{captureId:c.id});setSession(data.session);setReview(null);setView('practice');}
+ async function build(c:SavedCapture,selectedForms?:string[]){
+  setBusy('Preparing and checking practice…');
+  const result=await api('generate',{id:c.id,forms:selectedForms??c.selectedForms??c.plan?.items.map(i=>i.form)??[]});
+  await refresh();
+  // Omitted material does not block the questions that passed the lesson checks.
+  // Keep internal review reasons out of learner-facing messages.
+  if(!result.plan.exercises.length){
+   openReview({...c,plan:result.plan},selectedForms);
+   throw new Error('We couldn’t create practice from this text. Check the selected text or choose another word or phrase, then try again.');
+  }
+  const data=await api('session',{captureId:c.id});setSession(data.session);setReview(null);setView('practice');
+ }
  async function practise(c:SavedCapture){if(!library.profile){openSettings();return;}if(!c.extraction||needsReview(c.extraction,active)||!c.plan?.exercises.length){openReview(c);return;}await run('Opening practice…',async()=>{if(c.notice?.startsWith('Source recall')&&(library.modelAvailable||c.notice!==sourceRecallNotice)){await build(c);return;}try{const data=await api('session',{captureId:c.id});setSession(data.session);setView('practice');}catch(e){if(e instanceof Error&&e.message.includes('settings changed'))await build(c);else throw e;}});}
  async function saveReview(practice:boolean){if(!review||!draft)return;await run('Saving reviewed text…',async()=>{const chosen=parseForms(forms);if(chosen.length>4||chosen.some(s=>s.length>100))throw new Error('Choose up to four words or phrases, one per line, with no more than 100 characters each.');const extraction={...draft,regions:draft.regions.map(r=>({...r,confirmed:r.selected}))};if(!extraction.regions.some(r=>r.selected&&textOf(r).trim()&&r.language===active.targetLanguage))throw new Error('Select readable content in your target language.');const {capture}=await api('captures',{id:review.id,title:captureTitle,selectedForms:chosen,extraction});await refresh();if(practice)await build(capture,chosen);else setReview(null);});}
  function editRegion(id:string,change:Partial<Region>){setDraft(d=>d?{...d,regions:d.regions.map(r=>r.id===id?{...r,...change}:r)}:d);}
@@ -83,7 +94,7 @@ export default function Studio(){
  return <div className="app-shell">
   <header className="topbar"><Link className="brand" href="/" aria-label="Recollect home" onClick={()=>setView('library')}><Bookmark size={22} strokeWidth={2}/><span>Recollect</span></Link><nav aria-label="Main navigation"><button aria-current={view==='library'?'page':undefined} className={view==='library'?'active':''} onClick={()=>setView('library')}>Library</button><button aria-current={view==='practice'?'page':undefined} className={view==='practice'?'active':''} onClick={()=>setView('practice')}>Practice</button></nav><button className="icon-button" aria-label="Learning settings" onClick={openSettings}><Settings2 size={20}/></button></header>
   <main>
-   {error&&<div className="error" role="alert"><span>{error}{error.includes('Sign in')&&<> <a href="/signin-with-chatgpt?return_to=/">Sign in</a></>}</span><button className="icon-button" aria-label="Dismiss error" onClick={()=>setError('')}><X size={18}/></button></div>}
+   {error&&!review&&!settings&&<div className="error" role="alert"><span>{error}{error.includes('Sign in')&&<> <a href="/signin-with-chatgpt?return_to=/">Sign in</a></>}</span><button className="icon-button" aria-label="Dismiss error" onClick={()=>setError('')}><X size={18}/></button></div>}
    {busy&&<div className="working" role="status"><span className="spinner"/>{busy}</div>}
    {!loaded?<p className="empty-copy">Loading your library…</p>:view==='library'?<>
     <div className="view-heading"><h1 ref={libraryHeading} tabIndex={-1}>Library</h1><button className="primary" disabled={!!busy} onClick={()=>library.profile?input.current?.click():openSettings()}><Plus size={18}/>Add screenshot</button></div>
