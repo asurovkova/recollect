@@ -20,7 +20,7 @@ export function feedbackFor(e:Exercise,f:Feedback):Feedback{
 export function feedbackHeading(f:Feedback){
  if(f.method==='learner')return f.reviewDecision==='confident'?'Self-reviewed · not checked':f.reviewDecision==='practise'?'Marked for more practice':'Still unsure · saved for review';
  if(f.outcome==='uncertain')return 'Sentence use not checked';
- if(f.method==='objective')return f.outcome==='correct'?(f.assisted?'Matched with source help':'Answer matched'):'Compare the expected answer';
+ if(f.method==='objective')return f.outcome==='correct'?(f.assisted?'Matched with help':'Answer matched'):'Compare the expected answer';
  return f.outcome==='correct'?'AI assessment: looks correct':'AI assessment: needs revision';
 }
 export function reviewResolved(f:Feedback){return f.outcome!=='uncertain'||!!f.reviewDecision;}
@@ -29,14 +29,15 @@ export function resolveReview(f:Feedback,decision:Feedback['reviewDecision']):Fe
 }
 export function summaryFor(s:Session){
  const items=s.items.flatMap(item=>{
-  const attempts=s.queue.flatMap(e=>e.itemId===item.id&&s.feedback[e.id]?[{e,f:feedbackFor(e,s.feedback[e.id]),answer:s.answers[e.id]??''}]:[]);
+  const attempts=s.queue.flatMap(e=>{if(e.itemId!==item.id||!s.feedback[e.id])return [];const history=s.tutor?.steps[e.id]?.attempts;return history?.length?history.map(a=>({e,f:feedbackFor(e,a.feedback),answer:a.answer})):[{e,f:feedbackFor(e,s.feedback[e.id]),answer:s.answers[e.id]??''}];});
   if(!attempts.length)return [];
   return [{id:item.id,form:item.form,teaching:teachingFor(item),
+   revised:s.queue.some(e=>e.itemId===item.id&&(s.tutor?.steps[e.id]?.attempts.length??0)>1&&s.feedback[e.id]?.outcome==='correct'),
    independentRecall:attempts.some(({e,f})=>e.phase==='recall'&&f.method==='objective'&&f.outcome==='correct'&&!f.assisted),
    assistedRecall:attempts.some(({e,f})=>e.phase==='recall'&&f.method==='objective'&&f.outcome==='correct'&&f.assisted),
    checkedApplication:attempts.some(({e,f})=>e.phase==='application'&&f.method==='model'&&f.outcome==='correct'),
-   mistakes:attempts.filter(({f})=>f.outcome==='incorrect').map(({e,f,answer})=>({prompt:e.prompt,answer,expected:f.expected,explanation:f.explanation})),
-   unverified:attempts.filter(({f})=>f.outcome==='uncertain').map(({e,f,answer})=>({prompt:e.prompt,answer,decision:f.reviewDecision??'unsure'}))}];
+   mistakes:attempts.filter(({f})=>f.outcome==='incorrect').map(({e,f,answer})=>({prompt:e.prompt,answer,expected:f.expected,explanation:f.explanation,isExample:e.type==='open'})),
+   unverified:attempts.filter(({f})=>f.outcome==='uncertain').map(({e,f,answer})=>({prompt:e.prompt,answer,decision:s.feedback[e.id]?.reviewDecision??f.reviewDecision??'unsure'}))}];
  });
  return {answered:Object.keys(s.feedback).length,independentRecall:items.filter(i=>i.independentRecall).length,needsPractice:items.filter(i=>i.mistakes.length||i.unverified.some(a=>a.decision==='practise')).length,unverified:items.filter(i=>i.unverified.length).length,items};
 }

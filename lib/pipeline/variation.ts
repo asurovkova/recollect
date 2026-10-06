@@ -20,8 +20,8 @@ export function varyApplications(exercises:Exercise[],items:LearningItem[],profi
  let position=0;
  return exercises.map(e=>{
   const item=items.find(i=>i.id===e.itemId);
-  if(e.type!=='open'||!item?.sense.startsWith('Unverified context'))return {...e};
-  return {...e,prompt:applicationPrompt(item,profile,applicationStyles[(round+position++)%applicationStyles.length])};
+  if(e.type!=='open'||!item)return {...e};
+  return {...e,prompt:applicationPrompt(item,profile,applicationStyles[(round+position++)%applicationStyles.length]),context:'',contextKind:'new' as const};
  });
 }
 // Keep every validated task. Alternate recall and use for each item so the
@@ -30,4 +30,12 @@ export function balancedQueue(exercises:Exercise[],dueIds:Set<string>){
  const ids=[...new Set(exercises.map(e=>e.itemId))].sort((a,b)=>Number(dueIds.has(b))-Number(dueIds.has(a)));
  const order={recognition:0,recall:1,application:2};
  return ids.flatMap(id=>exercises.filter(e=>e.itemId===id).sort((a,b)=>order[a.phase]-order[b.phase]));
+}
+
+// Due recall comes before any teaching task. Exposure tracking still accounts for
+// overlapping source sentences or hints that reveal another target.
+export function tutoringQueue(exercises:Exercise[],dueIds:Set<string>){
+ const ordered=balancedQueue(exercises,dueIds);
+ const cold=ordered.filter(e=>dueIds.has(e.itemId)&&e.phase==='recall');
+ return [...cold,...ordered.filter(e=>!cold.includes(e))];
 }

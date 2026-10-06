@@ -22,3 +22,16 @@
 
 .library-tools{margin-bottom:20px}.library-search,.library-filters>label{display:flex;flex-direction:column;gap:7px;font-size:.875rem;font-weight:500;min-width:0}.library-filters{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:16px;align-items:end;margin-top:14px}.library-filters .due-filter{flex-direction:row;align-items:center;min-height:48px;gap:9px;cursor:pointer}.filter-summary{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:42px;margin-top:8px;font-size:.875rem;color:var(--muted)}.resume-banner{max-width:750px;margin:0 auto 20px;display:flex;gap:16px;align-items:center;justify-content:space-between;padding:16px;background:var(--blue-light);border-radius:8px;font-size:.9rem}.resume-banner>button{flex-shrink:0}.task-choice small,.draft-status{font-size:.875rem;color:var(--muted)}.choices label{border-color:#7a879d}.practice-start{display:flex;flex-wrap:wrap;align-items:start;gap:12px}.practice-start>button+button{margin-left:0}.practice-start>.practice-list,.practice-start>.empty-state{width:100%}.practice-start>.practice-list{margin-top:12px}
 @media(max-width:640px){.library-filters{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}.library-filters .due-filter{grid-column:1/-1;min-height:32px}.resume-banner{align-items:stretch;flex-direction:column}.dialog-actions{position:sticky;bottom:-22px;background:white;padding-bottom:16px;margin-bottom:-22px;z-index:1}.review-panel .region-list{overflow:visible;padding:2px}.filter-summary{align-items:start}}
+
+/* Short, learner-controlled support between an attempt and its explanation. */
+.practice-purpose { color:var(--muted-foreground,#625f58); font-size:.9rem; line-height:1.55; margin:0 0 1.2rem; }
+.coaching-panel,.reflection-panel { background:#f3f5ed; border:1px solid #d8dfca; border-radius:14px; padding:1.2rem; margin-top:1.2rem; }
+.coaching-panel h3,.reflection-panel h3 { margin:0 0 .65rem; font-size:1.05rem; }
+.coaching-panel p,.reflection-panel p,.learning-memory p { line-height:1.6; overflow-wrap:anywhere; }
+.coaching-panel .row-actions,.reflection-panel .row-actions { flex-wrap:wrap; gap:.75rem; margin-top:1rem; }
+.learning-memory { margin:1rem 0; padding:.9rem 0; border-top:1px solid #e4e1d9; }
+.learning-memory summary { cursor:pointer; font-size:.9rem; }
+.reflection-panel { margin:1.2rem 0; }
+.reflection-panel label { display:grid; gap:.5rem; font-weight:500; }
+.reflection-panel textarea { width:100%; resize:vertical; border:1px solid #cdcfc6; border-radius:8px; background:white; padding:.8rem; font:inherit; min-height:100px; }
+@media(max-width:480px) { .coaching-panel,.reflection-panel { padding:1rem; } .coaching-panel button,.reflection-panel button { white-space:normal; text-align:left; } }

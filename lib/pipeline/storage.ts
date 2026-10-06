@@ -30,3 +30,13 @@ export async function persistPlan(owner:string,capture:SavedCapture,plan:Plan,pr
  if(saved.collectionMatches[0])statements.push(db().prepare('UPDATE captures SET collection=? WHERE id=? AND user_id=?').bind(saved.collectionMatches[0].topic,capture.id,owner));
  await db().batch(statements);return saved;
 }
+
+export async function learnerMemory(owner:string,itemIds:string[]){
+ const memory:Record<string,import('./tutoring').LearnerMemory>={};
+ for(const id of itemIds){
+  const attempts=await db().prepare('SELECT diagnosis,assisted FROM item_attempts WHERE user_id=? AND item_id=? ORDER BY created_at DESC LIMIT 12').bind(owner,id).all<{diagnosis:import('./tutoring').Difficulty|null;assisted:number}>();
+  const reflection=await db().prepare('SELECT note FROM learner_reflections WHERE user_id=? AND item_id=? ORDER BY updated_at DESC LIMIT 1').bind(owner,id).first<{note:string}>();
+  memory[id]={difficulties:attempts.results.flatMap(a=>a.diagnosis&&a.diagnosis!=='uncertain'?[a.diagnosis]:[]),helpedAttempts:attempts.results.filter(a=>a.assisted).length,reflection:reflection?.note??null};
+ }
+ return memory;
+}

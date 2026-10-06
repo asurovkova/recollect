@@ -1,7 +1,8 @@
 import {db,user,json,failure,boundedJson,HttpError} from '@/lib/server';
-import {captureFor,profileFor} from '@/lib/pipeline/storage';
+import {captureFor,profileFor,learnerMemory} from '@/lib/pipeline/storage';
 import {publicSession,type Session} from '@/lib/pipeline/schema';
-import {varyApplications,balancedQueue} from '@/lib/pipeline/variation';
+import {varyApplications,tutoringQueue,applicationPrompt} from '@/lib/pipeline/variation';
+import {prepareQuestion,recentExposure} from '@/lib/pipeline/tutoring';
 export async function POST(request:Request){try{
  const owner=await user(request),body=await boundedJson(request),profile=await profileFor(owner);
  if(!profile)throw new HttpError(400,'Save your learning settings first.');
@@ -12,9 +13,21 @@ export async function POST(request:Request){try{
  if(saved?.profile!==JSON.stringify(profile))throw new HttpError(409,'Your learning settings changed. Rebuild this practice.');
  if(body.focusItemIds!==undefined&&(!Array.isArray(body.focusItemIds)||!body.focusItemIds.length||body.focusItemIds.length>4||body.focusItemIds.some((id:unknown)=>typeof id!=='string'||!c.plan!.items.some(i=>i.id===id))))throw new HttpError(400,'Choose items from this screenshot.');
  const history=await db().prepare("SELECT COUNT(*) AS rounds FROM practice_sessions WHERE user_id=? AND json_extract(data,'$.captureId')=?").bind(owner,c.id).first<{rounds:number}>();
- const due=await db().prepare('SELECT item_id FROM item_schedule WHERE user_id=? AND due_at<=?').bind(owner,new Date().toISOString()).all<{item_id:string}>();const dueIds=new Set(due.results.map(r=>r.item_id));
+ const due=await db().prepare('SELECT item_id FROM item_schedule WHERE user_id=? AND due_at<=? AND EXISTS (SELECT 1 FROM item_attempts a WHERE a.item_id=item_schedule.item_id AND a.user_id=item_schedule.user_id)').bind(owner,new Date().toISOString()).all<{item_id:string}>();const dueIds=new Set(due.results.map(r=>r.item_id));
+ const cutoff=new Date(Date.now()-86400000).toISOString();
+ const recentSessions=await db().prepare('SELECT data FROM practice_sessions WHERE user_id=? AND updated_at>=?').bind(owner,cutoff).all<{data:string}>();
+ const exposed=recentExposure(recentSessions.results.map(r=>JSON.parse(r.data)),cutoff);
+ const recentAttempts=await db().prepare('SELECT DISTINCT item_id FROM item_attempts WHERE user_id=? AND created_at>=?').bind(owner,cutoff).all<{item_id:string}>();
+ recentAttempts.results.forEach(a=>exposed.add(a.item_id));
+ exposed.forEach(id=>dueIds.delete(id));
+ const memory=await learnerMemory(owner,c.plan.items.map(i=>i.id));
+ const seen=await db().prepare('SELECT DISTINCT item_id FROM item_attempts WHERE user_id=?').bind(owner).all<{item_id:string}>();
+ const newIds=c.plan.items.filter(i=>!seen.results.some(a=>a.item_id===i.id)).map(i=>i.id);
  const exercises=varyApplications(c.plan.exercises,c.plan.items,profile,history?.rounds??0).filter(e=>!body.focusItemIds||body.focusItemIds.includes(e.itemId));
- const queue=balancedQueue(exercises,dueIds).map(e=>({...e,choices:[...e.choices].map(value=>({value,key:crypto.getRandomValues(new Uint32Array(1))[0]})).sort((a,b)=>a.key-b.key).map(x=>x.value)}));
- const session:Session={id:crypto.randomUUID(),captureId:c.id,profile,items:c.plan.items,queue,index:0,feedback:{},answers:{},assisted:{},retried:[]};
+ // Repeated grammar difficulty gets a shorter transfer task with alternating contexts.
+ for(const e of exercises){const m=memory[e.itemId],item=c.plan.items.find(i=>i.id===e.itemId)!;if(e.type==='open'&&m.difficulties.filter(d=>d==='grammar'||d==='word-order').length>=2)e.prompt=applicationPrompt(item,profile,(history?.rounds??0)%2?'dialogue':'personal');}
+ const queue=tutoringQueue(exercises,dueIds).map(e=>({...e,choices:[...e.choices].map(value=>({value,key:crypto.getRandomValues(new Uint32Array(1))[0]})).sort((a,b)=>a.key-b.key).map(x=>x.value)}));
+ const session:Session={id:crypto.randomUUID(),captureId:c.id,profile,items:c.plan.items,queue,index:0,feedback:{},answers:{},assisted:{},retried:[],tutor:{version:1,steps:{},exposedIds:[...exposed],exposedAt:{},dueIds:[...dueIds],newIds,memory,reflection:''}};
+ prepareQuestion(session);
  await db().prepare('INSERT INTO practice_sessions (id,user_id,data,updated_at) VALUES (?,?,?,?)').bind(session.id,owner,JSON.stringify(session),new Date().toISOString()).run();return json({session:publicSession(session)});
 }catch(e){return failure(e)}}
