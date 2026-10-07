@@ -24,11 +24,11 @@ export type Plan=z.infer<typeof planSchema>;
 export type Feedback={skipped?:boolean;referenceOnly?:boolean;diagnosis?:Difficulty;hint?:string;nextHint?:string;outcome:'correct'|'incorrect'|'uncertain';expected:string;explanation:string;assisted?:boolean;method?:'objective'|'model'|'unavailable'|'learner';scheduleNote?:string;reviewDecision?:'confident'|'practise'|'unsure'};
 export type SavedCapture={id:string;title:string;text:string;imageKey:string|null;createdAt:string;extraction:Extraction|null;plan:Plan|null;notice:string|null;collection:string;selectedForms?:string[]};
 export type Session={mode?:PracticeMode;tutor?:TutorState;id:string;captureId:string;profile:Profile;items:LearningItem[];queue:Exercise[];index:number;feedback:Record<string,Feedback>;answers:Record<string,string>;assisted:Record<string,boolean>;retried:string[]};
-export type PublicSession={mode?:PracticeMode;coaching?:ReturnType<typeof publicCoaching>;reflection?:string;id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;teaching:Teaching|null;summary:SessionSummary|null;notice?:string;writingStyle?:ApplicationStyle|null};
+export type PublicSession={language?:string;mode?:PracticeMode;coaching?:ReturnType<typeof publicCoaching>;reflection?:string;id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;teaching:Teaching|null;summary:SessionSummary|null;notice?:string;writingStyle?:ApplicationStyle|null};
 export function publicSession(s:Session):PublicSession{
  const e=s.queue[s.index],coaching=e?publicCoaching(s,e):null;
  const f=e&&(!coaching||coaching.stage==='feedback')?s.feedback[e.id]:null,item=e?s.items.find(i=>i.id===e.itemId):null;
- return {mode:s.mode??'mixed',id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,coaching,reflection:s.tutor?.reflection,
+ return {language:s.profile.targetLanguage,mode:s.mode??'mixed',id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,coaching,reflection:s.tutor?.reflection,
  writingStyle:e?.type==='open'&&item?applicationStyles.find(style=>applicationPrompt(item,s.profile,style)===e.prompt)??null:null,
  exercise:e?((({answer:_a,alternatives:_b,explanation:_c,...rest})=>({...rest,source:{...rest.source,quote:s.tutor?'':rest.source.quote}}))(e)):null,
  feedback:e&&f?feedbackFor(e,f):null,answer:e?s.answers[e.id]??'':'',assisted:e?(f?!!f.assisted:isAssisted(s,e)):false,
