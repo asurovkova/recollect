@@ -6,6 +6,7 @@ import {gradeOpen} from '@/lib/pipeline/generation';
 import {applicationStyles,applicationPrompt} from '@/lib/pipeline/variation';
 import {captureFor} from '@/lib/pipeline/storage';
 import {stepFor,markHelp,isAssisted,expose,prepareQuestion,hintFor,recordTutorAttempt,revealTeaching} from '@/lib/pipeline/tutoring';
+import {flashcardFeedback} from '@/lib/pipeline/practice-modes';
 import {checkDisposition,finishLegacyStep,advancePractice} from '@/lib/pipeline/practice-protocol';
 export async function POST(request:Request){try{
  const owner=await user(request),body=await boundedJson(request,5000);
@@ -31,6 +32,7 @@ export async function POST(request:Request){try{
  const step=s.tutor?stepFor(s,e):null,item=s.items.find(i=>i.id===e.itemId)!;
  let record:Feedback|null=null,revision=step?.attempts.length??0;
  const priorHintLevel=step?.hints.length??0;
+ if(e.type==='flashcard'&&['check','hint','style'].includes(body.action))throw new HttpError(400,'Turn the card over to review its meaning.');
  if(body.action==='source'){
   markHelp(s,e);
   // Opening an image can reveal any target from this screenshot.
@@ -42,7 +44,7 @@ export async function POST(request:Request){try{
   if(!step)throw new HttpError(400,'Use the saved answer feedback.');
   if(step.stage!=='feedback'){
    markHelp(s,e);step.revealed=true;step.stage='feedback';
-   if(!s.feedback[e.id]){record={outcome:'uncertain',method:'learner',reviewDecision:'practise',expected:e.answer,explanation:'You chose to study the explanation. No independent answer was assessed.',assisted:true,diagnosis:'uncertain'};s.feedback[e.id]=record;}
+   if(!s.feedback[e.id]){record=e.type==='flashcard'?flashcardFeedback(e):{outcome:'uncertain',method:'learner',reviewDecision:'practise',expected:e.answer,explanation:'You chose to study the explanation. No independent answer was assessed.',assisted:true,diagnosis:'uncertain'};s.feedback[e.id]=record;}
    revealTeaching(s,e);
   }
  }else if(body.action==='style'){

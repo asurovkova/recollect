@@ -1,12 +1,15 @@
 import {db,user,json,failure,boundedJson,HttpError} from '@/lib/server';
 import {captureFor,profileFor,learnerMemory} from '@/lib/pipeline/storage';
 import {publicSession,type Session} from '@/lib/pipeline/schema';
-import {varyApplications,tutoringQueue,applicationPrompt} from '@/lib/pipeline/variation';
+import {tutoringQueue,applicationPrompt} from '@/lib/pipeline/variation';
+import {practiceModes,practiceExercises,type PracticeMode} from '@/lib/pipeline/practice-modes';
 import {prepareQuestion,recentExposure} from '@/lib/pipeline/tutoring';
 export async function POST(request:Request){try{
  const owner=await user(request),body=await boundedJson(request),profile=await profileFor(owner);
  if(!profile)throw new HttpError(400,'Save your learning settings first.');
  if(body.resume){const r=await db().prepare('SELECT data FROM practice_sessions WHERE id=? AND user_id=?').bind(String(body.resume),owner).first<{data:string}>();if(!r)throw new HttpError(404,'Session not found.');return json({session:publicSession(JSON.parse(r.data))});}
+ if(body.mode!==undefined&&!practiceModes.includes(body.mode))throw new HttpError(400,'Choose a practice type.');
+ const mode:PracticeMode=body.mode??'mixed';
  const c=await captureFor(owner,String(body.captureId));
  const saved=await db().prepare('SELECT profile FROM capture_content WHERE capture_id=?').bind(c.id).first<{profile:string}>();
  if(!c.plan?.exercises.length)throw new HttpError(400,'Create practice from reviewed text first.');
@@ -23,11 +26,12 @@ export async function POST(request:Request){try{
  const memory=await learnerMemory(owner,c.plan.items.map(i=>i.id));
  const seen=await db().prepare('SELECT DISTINCT item_id FROM item_attempts WHERE user_id=?').bind(owner).all<{item_id:string}>();
  const newIds=c.plan.items.filter(i=>!seen.results.some(a=>a.item_id===i.id)).map(i=>i.id);
- const exercises=varyApplications(c.plan.exercises,c.plan.items,profile,history?.rounds??0).filter(e=>!body.focusItemIds||body.focusItemIds.includes(e.itemId));
+ const exercises=practiceExercises(c.plan,profile,mode,history?.rounds??0).filter(e=>!body.focusItemIds||body.focusItemIds.includes(e.itemId));
  // Repeated grammar difficulty gets a shorter transfer task with alternating contexts.
- for(const e of exercises){const m=memory[e.itemId],item=c.plan.items.find(i=>i.id===e.itemId)!;if(e.type==='open'&&m.difficulties.filter(d=>d==='grammar'||d==='word-order').length>=2)e.prompt=applicationPrompt(item,profile,(history?.rounds??0)%2?'dialogue':'personal');}
+ for(const e of exercises){const m=memory[e.itemId],item=c.plan.items.find(i=>i.id===e.itemId)!;if(mode==='mixed'&&e.type==='open'&&m.difficulties.filter(d=>d==='grammar'||d==='word-order').length>=2)e.prompt=applicationPrompt(item,profile,(history?.rounds??0)%2?'dialogue':'personal');}
+ if(!exercises.length)throw new HttpError(400,'This screenshot has no fill-in-the-blank questions yet. Try Flashcards or Guided writing.');
  const queue=tutoringQueue(exercises,dueIds).map(e=>({...e,choices:[...e.choices].map(value=>({value,key:crypto.getRandomValues(new Uint32Array(1))[0]})).sort((a,b)=>a.key-b.key).map(x=>x.value)}));
- const session:Session={id:crypto.randomUUID(),captureId:c.id,profile,items:c.plan.items,queue,index:0,feedback:{},answers:{},assisted:{},retried:[],tutor:{version:1,steps:{},exposedIds:[...exposed],exposedAt:{},dueIds:[...dueIds],newIds,memory,reflection:''}};
+ const session:Session={mode,id:crypto.randomUUID(),captureId:c.id,profile,items:c.plan.items,queue,index:0,feedback:{},answers:{},assisted:{},retried:[],tutor:{version:1,steps:{},exposedIds:[...exposed],exposedAt:{},dueIds:[...dueIds],newIds,memory,reflection:''}};
  prepareQuestion(session);
  await db().prepare('INSERT INTO practice_sessions (id,user_id,data,updated_at) VALUES (?,?,?,?)').bind(session.id,owner,JSON.stringify(session),new Date().toISOString()).run();return json({session:publicSession(session)});
 }catch(e){return failure(e)}}

@@ -20,7 +20,8 @@ export function validatePlan(plan:Plan,extraction:Extraction,profile:Profile,cap
  const exercises=plan.exercises.filter(e=>{
   let reason='';const item=items.find(i=>i.id===e.itemId);
   const region=regions.find(r=>r.id===e.source.regionId);
-  if(!item||!validSource(e.source)||item.source.regionId!==e.source.regionId)reason='Invalid or uncertain source reference.';
+  if(e.type==='flashcard')reason='Study cards are created from accepted items, not generated as assessment questions.';
+  else if(!item||!validSource(e.source)||item.source.regionId!==e.source.regionId)reason='Invalid or uncertain source reference.';
   else if(e.contextKind==='captured'&&region?.correction!==null)reason='Corrected text must be labelled as corrected.';
   else if(e.contextKind==='new'&&e.phase!=='application')reason='New examples belong to application.';
   else if(e.contextKind!=='new'&&e.type!=='cloze'&&e.context!==e.source.quote)reason='Captured wording was changed.';

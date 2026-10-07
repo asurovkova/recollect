@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import type {PracticeMode} from './practice-modes.ts';
 import {publicCoaching,isAssisted,type TutorState,type Difficulty} from './tutoring.ts';
 import {applicationStyles,applicationPrompt,type ApplicationStyle} from './variation.ts';
 import {compactJapaneseSpacing} from './text-matching.ts';
@@ -16,18 +17,18 @@ export const textOf=(r:Region)=>r.correction??r.rawText;
 export const sourceSchema=z.object({captureId:z.string(),regionId:z.string(),quote:z.string().min(1).max(5000)}).strict();
 export const itemSchema=z.object({id:z.string().min(1).max(100),language:z.string().max(12),form:z.string().min(1).max(100),kind:z.enum(['vocabulary','phrase','grammar']),sense:z.string().min(1).max(240),explanation:z.string().min(1).max(400),example:z.string().max(400).nullable(),topic:z.string().min(1).max(80),source:sourceSchema,matchItemId:z.string().nullable(),selectionReason:z.string().max(240)}).strict();
 export type LearningItem=z.infer<typeof itemSchema>;
-export const exerciseSchema=z.object({id:z.string().min(1).max(100),itemId:z.string(),type:z.enum(['meaning','cloze','collocation','reorder','open']),phase:z.enum(['recognition','recall','application']),prompt:z.string().min(1).max(600),context:z.string().max(1200),contextKind:z.enum(['captured','corrected','new']),choices:z.array(z.string().min(1).max(250)).max(4),answer:z.string().min(1).max(500),alternatives:z.array(z.string().min(1).max(500)).max(8),explanation:z.string().min(1).max(400),source:sourceSchema}).strict();
+export const exerciseSchema=z.object({id:z.string().min(1).max(100),itemId:z.string(),type:z.enum(['meaning','cloze','collocation','reorder','open','flashcard']),phase:z.enum(['recognition','recall','application']),prompt:z.string().min(1).max(600),context:z.string().max(1200),contextKind:z.enum(['captured','corrected','new']),choices:z.array(z.string().min(1).max(250)).max(4),answer:z.string().min(1).max(500),alternatives:z.array(z.string().min(1).max(500)).max(8),explanation:z.string().min(1).max(400),source:sourceSchema}).strict();
 export type Exercise=z.infer<typeof exerciseSchema>;
 export const planSchema=z.object({items:z.array(itemSchema).max(4),exercises:z.array(exerciseSchema).max(12),reviewItems:z.array(z.object({regionId:z.string(),reason:z.string().max(240)})).max(20),collectionMatches:z.array(z.object({topic:z.string(),itemIds:z.array(z.string())})).max(4)}).strict();
 export type Plan=z.infer<typeof planSchema>;
 export type Feedback={skipped?:boolean;referenceOnly?:boolean;diagnosis?:Difficulty;hint?:string;nextHint?:string;outcome:'correct'|'incorrect'|'uncertain';expected:string;explanation:string;assisted?:boolean;method?:'objective'|'model'|'unavailable'|'learner';scheduleNote?:string;reviewDecision?:'confident'|'practise'|'unsure'};
 export type SavedCapture={id:string;title:string;text:string;imageKey:string|null;createdAt:string;extraction:Extraction|null;plan:Plan|null;notice:string|null;collection:string;selectedForms?:string[]};
-export type Session={tutor?:TutorState;id:string;captureId:string;profile:Profile;items:LearningItem[];queue:Exercise[];index:number;feedback:Record<string,Feedback>;answers:Record<string,string>;assisted:Record<string,boolean>;retried:string[]};
-export type PublicSession={coaching?:ReturnType<typeof publicCoaching>;reflection?:string;id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;teaching:Teaching|null;summary:SessionSummary|null;notice?:string;writingStyle?:ApplicationStyle|null};
+export type Session={mode?:PracticeMode;tutor?:TutorState;id:string;captureId:string;profile:Profile;items:LearningItem[];queue:Exercise[];index:number;feedback:Record<string,Feedback>;answers:Record<string,string>;assisted:Record<string,boolean>;retried:string[]};
+export type PublicSession={mode?:PracticeMode;coaching?:ReturnType<typeof publicCoaching>;reflection?:string;id:string;captureId:string;index:number;total:number;done:boolean;exercise:Omit<Exercise,'answer'|'alternatives'|'explanation'>|null;feedback:Feedback|null;answer:string;assisted:boolean;teaching:Teaching|null;summary:SessionSummary|null;notice?:string;writingStyle?:ApplicationStyle|null};
 export function publicSession(s:Session):PublicSession{
  const e=s.queue[s.index],coaching=e?publicCoaching(s,e):null;
  const f=e&&(!coaching||coaching.stage==='feedback')?s.feedback[e.id]:null,item=e?s.items.find(i=>i.id===e.itemId):null;
- return {id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,coaching,reflection:s.tutor?.reflection,
+ return {mode:s.mode??'mixed',id:s.id,captureId:s.captureId,index:s.index,total:s.queue.length,done:!e,coaching,reflection:s.tutor?.reflection,
  writingStyle:e?.type==='open'&&item?applicationStyles.find(style=>applicationPrompt(item,s.profile,style)===e.prompt)??null:null,
  exercise:e?((({answer:_a,alternatives:_b,explanation:_c,...rest})=>({...rest,source:{...rest.source,quote:s.tutor?'':rest.source.quote}}))(e)):null,
  feedback:e&&f?feedbackFor(e,f):null,answer:e?s.answers[e.id]??'':'',assisted:e?(f?!!f.assisted:isAssisted(s,e)):false,

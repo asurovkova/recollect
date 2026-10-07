@@ -25,20 +25,21 @@ export function feedbackHeading(f:Feedback){
 }
 export function reviewResolved(f:Feedback){return f.outcome!=='uncertain'||!!f.reviewDecision;}
 export function resolveReview(f:Feedback,decision:Feedback['reviewDecision']):Feedback{
- return {...f,outcome:'uncertain',method:'learner',reviewDecision:decision,assisted:true,explanation:'Your reflection is saved. The meaning and grammar of this response have not been verified. Your recall review date is unchanged.'};
+ return {...f,outcome:'uncertain',method:'learner',reviewDecision:decision,assisted:true,explanation:'Your self-review is saved. This is not a checked answer. Your recall review date is unchanged.'};
 }
 export function summaryFor(s:Session){
  const items=s.items.flatMap(item=>{
   const attempts=s.queue.flatMap(e=>{if(e.itemId!==item.id||!s.feedback[e.id])return [];const history=s.tutor?.steps[e.id]?.attempts;return history?.length?history.map(a=>({e,f:feedbackFor(e,a.feedback),answer:a.answer})):[{e,f:feedbackFor(e,s.feedback[e.id]),answer:s.answers[e.id]??''}];});
   if(!attempts.length)return [];
   return [{id:item.id,form:item.form,teaching:teachingFor(item),
+   cardReview:attempts.some(({e,f})=>e.type==='flashcard'&&!f.skipped)?s.feedback[attempts.find(({e,f})=>e.type==='flashcard'&&!f.skipped)!.e.id].reviewDecision??'unsure':null,
    revised:s.queue.some(e=>e.itemId===item.id&&(s.tutor?.steps[e.id]?.attempts.length??0)>1&&s.feedback[e.id]?.outcome==='correct'),
    independentRecall:attempts.some(({e,f})=>e.phase==='recall'&&f.method==='objective'&&f.outcome==='correct'&&!f.assisted),
    assistedRecall:attempts.some(({e,f})=>e.phase==='recall'&&f.method==='objective'&&f.outcome==='correct'&&f.assisted),
    checkedApplication:attempts.some(({e,f})=>e.phase==='application'&&f.method==='model'&&f.outcome==='correct'),
    mistakes:attempts.filter(({f})=>f.outcome==='incorrect').map(({e,f,answer})=>({prompt:e.prompt,answer,expected:f.expected,explanation:f.explanation,isExample:e.type==='open'})),
-   unverified:attempts.filter(({f})=>f.outcome==='uncertain').map(({e,f,answer})=>({prompt:e.prompt,answer,skipped:!!f.skipped,decision:s.feedback[e.id]?.reviewDecision??f.reviewDecision??'unsure'}))}];
+   unverified:attempts.filter(({e,f})=>f.outcome==='uncertain'&&(e.type!=='flashcard'||f.skipped)).map(({e,f,answer})=>({prompt:e.prompt,answer,skipped:!!f.skipped,decision:s.feedback[e.id]?.reviewDecision??f.reviewDecision??'unsure'}))}];
  });
- return {answered:Object.keys(s.feedback).length,independentRecall:items.filter(i=>i.independentRecall).length,needsPractice:items.filter(i=>i.mistakes.length||i.unverified.some(a=>a.decision==='practise')).length,unverified:items.filter(i=>i.unverified.length).length,items};
+ return {answered:Object.keys(s.feedback).length,independentRecall:items.filter(i=>i.independentRecall).length,needsPractice:items.filter(i=>i.cardReview==='practise'||i.mistakes.length||i.unverified.some(a=>a.decision==='practise')).length,unverified:items.filter(i=>i.unverified.length).length,items};
 }
 export type SessionSummary=ReturnType<typeof summaryFor>;
