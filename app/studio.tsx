@@ -10,6 +10,8 @@ import {applicationStyles,applicationLabels} from '@/lib/pipeline/variation';
 import {needsReview,textWarnings} from '@/lib/pipeline/extraction';
 import {selectedForms as parseForms} from '@/lib/pipeline/text-matching';
 import {readScreenshot} from '@/lib/read-screenshot';
+import {maxBatchScreenshots,runUploadQueue,type UploadEntry} from '@/lib/upload-queue';
+import {ScreenshotUploads} from './screenshot-uploads';
 import {feedbackHeading,reviewResolved} from '@/lib/pipeline/feedback';
 import {practiceModes,modeDetails,practiceExercises,type PracticeMode} from '@/lib/pipeline/practice-modes';
 import {Flashcard,TeachingPanel,SessionRecap} from './practice-feedback';
@@ -27,6 +29,8 @@ export default function Studio(){
  const [error,setError]=useState(''),[busy,setBusy]=useState(''),[settings,setSettings]=useState(false),[profile,setProfile]=useState<Profile>(defaultProfile);
  const [review,setReview]=useState<SavedCapture|null>(null),[draft,setDraft]=useState<Extraction|null>(null),[forms,setForms]=useState(''),[captureTitle,setCaptureTitle]=useState(''),[draftStatus,setDraftStatus]=useState('');
  const [source,setSource]=useState<{capture:SavedCapture;regionId?:string;questionQuote?:string}|null>(null),[session,setSessionState]=useState<PublicSession|null>(null),[answer,setAnswer]=useState(''),[tokens,setTokens]=useState<number[]>([]),[resumeId,setResumeId]=useState<string|null>(null);
+ const [uploads,setUploads]=useState<UploadEntry[]>([]),[uploading,setUploading]=useState(false),[dragging,setDragging]=useState(false);
+ const uploadLock=useRef(false);
  const [practiceChoice,setPracticeChoice]=useState<SavedCapture|null>(null);
  const [query,setQuery]=useState(''),[filterLanguage,setFilterLanguage]=useState(''),[topic,setTopic]=useState(''),[dueOnly,setDueOnly]=useState(false);
  const dialogOpeners=useRef<Partial<Record<'settings'|'review'|'source'|'practiceChoice',HTMLElement>>>({});
@@ -69,13 +73,40 @@ export default function Studio(){
  async function run(label:string,fn:()=>Promise<void>){setBusy(label);setError('');try{await fn();}catch(e){setError(e instanceof Error?e.message:'Please try again.');}finally{setBusy('');}}
  function openReview(c:SavedCapture,keepForms?:string[]){rememberOpener('review');setError('');setCaptureTitle(c.title);setDraft(structuredClone(localExtraction(c,active)));setForms((keepForms??c.selectedForms??c.plan?.items.map(i=>i.form)??[]).join('\n'));setReview(c);}
  async function saveProfile(){await run('Saving settings…',async()=>{const data=await api('profile',profile);setLibrary(l=>({...l,profile:data.profile}));setSettings(false);});}
- async function importFile(file?:File){if(!file)return;if(!library.profile){openSettings();return;}await run('Reading screenshot…',async()=>{
-  if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8*1024*1024)throw new Error('Choose a PNG, JPG, or WebP under 8 MB.');
-  const bitmap=await createImageBitmap(file);const {width,height}=bitmap;bitmap.close();if(width>20000||height>20000||width*height>40000000)throw new Error('This image is too large. Crop it to the language content.');
-  const extraction=await readScreenshot(file,active,width,height,setBusy);
-  setBusy(library.modelAvailable?'Checking the screenshot…':'Saving screenshot…');const form=new FormData();form.set('image',file);form.set('extraction',JSON.stringify(extraction));const result=await api('extract',form);await refresh();
-  if((!result.capture.extraction||needsReview(result.capture.extraction,active))||!library.modelAvailable)openReview(result.capture);else await build(result.capture);
- });if(input.current)input.current.value='';}
+ function receivedUpload(entry:UploadEntry){
+  setUploads(current=>current.map(item=>item.id===entry.id?entry:item));
+  if(entry.capture)setLibrary(current=>({...current,captures:[entry.capture!,...current.captures.filter(c=>c.id!==entry.capture!.id)]}));
+ }
+ async function processUploads(entries:UploadEntry[],openSingle=false){
+  if(uploadLock.current)return;
+  uploadLock.current=true;setUploading(true);setBusy('Adding screenshots…');setError('');
+  try{
+   const results=await runUploadQueue(entries,{
+    read:async(file,status)=>{
+     let bitmap:ImageBitmap;try{bitmap=await createImageBitmap(file);}catch{throw new Error('This image could not be opened. Try exporting it as PNG or JPG.');}
+     const {width,height}=bitmap;bitmap.close();if(width>20000||height>20000||width*height>40000000)throw new Error('This image is too large. Crop it to the language content.');
+     return readScreenshot(file,active,width,height,status);
+    },
+    save:async(file,extraction,id)=>{const form=new FormData();form.set('image',file);form.set('extraction',JSON.stringify(extraction));form.set('uploadId',id);return (await api('extract',form)).capture;},
+    needsReview:captured=>!library.modelAvailable||!captured.extraction||needsReview(captured.extraction,active),
+    prepare:async(captured)=>{const result=await api('generate',{id:captured.id,forms:captured.selectedForms??[]});return {...captured,plan:result.plan,notice:result.notice};}
+   },receivedUpload);
+   try{await refresh();}catch{setError('Your uploaded screenshots are saved, but the library could not refresh. Reload when your connection returns.');}
+   if(openSingle&&results.length===1&&results[0].capture&&results[0].status!=='failed'){
+    if(results[0].status==='ready')choosePractice(results[0].capture);else openReview(results[0].capture);
+   }
+  }finally{uploadLock.current=false;setUploading(false);setBusy('');}
+ }
+ async function importFiles(files:File[]){
+  if(input.current)input.current.value='';
+  if(!files.length||uploadLock.current||busy)return;
+  if(!library.profile){openSettings();return;}
+  if(files.length>maxBatchScreenshots){setError(`Choose up to ${maxBatchScreenshots} screenshots at a time. None of these files have been added yet.`);return;}
+  const entries:UploadEntry[]=files.map(file=>({id:crypto.randomUUID(),file,status:'waiting',message:'Waiting…',retryable:true}));
+  setUploads(entries);clearFilters();setView('library');await processUploads(entries,files.length===1);
+ }
+ function retryUpload(id:string){const entry=uploads.find(item=>item.id===id);if(entry&&!busy&&!uploadLock.current)void processUploads([entry]);}
+ useEffect(()=>{if(!uploading)return;const warn=(event:BeforeUnloadEvent)=>{event.preventDefault();event.returnValue='';};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[uploading]);
  async function build(c:SavedCapture,selectedForms?:string[]){
   setBusy('Preparing and checking practice…');
   const result=await api('generate',{id:c.id,forms:selectedForms??c.selectedForms??c.plan?.items.map(i=>i.form)??[]});
@@ -100,19 +131,21 @@ export default function Studio(){
  const e=session?.exercise;
  const coaching=session?.coaching;
  return <div className="app-shell">
-  <header className="topbar"><Link className="brand" href="/" aria-label="Recollect home" onClick={()=>setView('library')}><Bookmark size={22} strokeWidth={2}/><span>Recollect</span></Link><nav aria-label="Main navigation"><button aria-current={view==='library'?'page':undefined} className={view==='library'?'active':''} onClick={()=>setView('library')}>Library</button><button aria-current={view==='practice'?'page':undefined} className={view==='practice'?'active':''} onClick={()=>setView('practice')}>Practice</button><button aria-current={view==='progress'?'page':undefined} className={view==='progress'?'active':''} onClick={()=>setView('progress')}>Progress</button></nav><button className="icon-button" aria-label="Learning settings" onClick={openSettings}><Settings2 size={20}/></button></header>
+  <header className="topbar"><Link className="brand" href="/" aria-label="Recollect home" onClick={()=>setView('library')}><Bookmark size={22} strokeWidth={2}/><span>Recollect</span></Link><nav aria-label="Main navigation"><button aria-current={view==='library'?'page':undefined} className={view==='library'?'active':''} onClick={()=>setView('library')}>Library</button><button aria-current={view==='practice'?'page':undefined} className={view==='practice'?'active':''} onClick={()=>setView('practice')}>Practice</button><button aria-current={view==='progress'?'page':undefined} className={view==='progress'?'active':''} onClick={()=>setView('progress')}>Progress</button></nav><button className="icon-button" aria-label="Learning settings" disabled={!!busy} onClick={openSettings}><Settings2 size={20}/></button></header>
   <main>
    {error&&!review&&!settings&&!practiceChoice&&<div className="error" role="alert"><span>{error}{error.includes('Sign in')&&<> <a href="/signin-with-chatgpt?return_to=/">Sign in</a></>}</span><button className="icon-button" aria-label="Dismiss error" onClick={()=>setError('')}><X size={18}/></button></div>}
    {busy&&<div className="working" role="status"><span className="spinner"/>{busy}</div>}
    {!loaded?<p className="empty-copy">Loading your library…</p>:view==='progress'?<Progress busy={!!busy} onLibrary={()=>setView('library')} onPractise={practiseWord} onPractiseAll={practiseAll} onResume={resumeId?()=>run('Opening saved practice…',async()=>{const data=await api('session',{resume:resumeId});setSession(data.session);setView('practice');}):undefined} onSource={word=>{const capture=library.captures.find(c=>c.id===(word.captureId??word.sourceCaptureId));if(capture)openSource({capture});else setError('The original screenshot is no longer available.');}}/>:view==='library'?<>
-    <div className="view-heading"><h1 ref={libraryHeading} tabIndex={-1}>Library</h1><button className="primary" disabled={!!busy} onClick={()=>library.profile?input.current?.click():openSettings()}><Plus size={18}/>Add screenshot</button></div>
-    <input ref={input} type="file" className="sr-only" aria-label="Choose screenshot" accept="image/png,image/jpeg,image/webp" onChange={event=>importFile(event.target.files?.[0])}/>
+    <div className="view-heading"><h1 ref={libraryHeading} tabIndex={-1}>Library</h1><button className="primary" disabled={!!busy} onClick={()=>library.profile?input.current?.click():openSettings()}><Plus size={18}/>Add screenshots</button></div>
+    <input ref={input} type="file" multiple disabled={!!busy} className="sr-only" aria-label="Choose screenshots" accept="image/png,image/jpeg,image/webp" onChange={event=>void importFiles(Array.from(event.target.files??[]))}/>
+    <div className={`upload-dropzone ${dragging?'dragging':''}`} onDragOver={event=>{event.preventDefault();if(!busy)setDragging(true);}} onDragLeave={()=>setDragging(false)} onDrop={event=>{event.preventDefault();setDragging(false);void importFiles(Array.from(event.dataTransfer.files));}}><ImagePlus size={22}/><p><strong>Choose or drop screenshots here</strong><span>Up to {maxBatchScreenshots} at once · PNG, JPG or WebP · 8 MB each</span></p><button disabled={!!busy} onClick={()=>library.profile?input.current?.click():openSettings()}>Choose files</button></div>
+    <ScreenshotUploads entries={uploads.map(entry=>{const capture=entry.capture&&(library.captures.find(c=>c.id===entry.capture!.id)??entry.capture);return capture?{...entry,capture,...(!uploading&&capture.plan?.exercises.length?{status:'ready' as const,message:'Ready to practise.'}:{})}:entry;})} running={uploading} disabled={!!busy} onRetry={retryUpload} onReview={openReview} onPractise={choosePractice} onDismiss={()=>setUploads([])}/>
     {!!library.captures.length&&<section className="library-tools" aria-label="Find screenshots"><label className="library-search">Search screenshots<input type="search" value={query} onChange={event=>setQuery(event.target.value)} placeholder="Search titles, text or phrases"/></label><div className="library-filters"><label>Language<select value={filterLanguage} onChange={event=>setFilterLanguage(event.target.value)}><option value="">All languages</option>{Object.entries(languages).map(([code,label])=><option key={code} value={code}>{label}</option>)}</select></label><label>Topic<select value={topic} onChange={event=>setTopic(event.target.value)}><option value="">All topics</option>{topics.map(t=><option key={t} value={t}>{t}</option>)}</select></label><label className="due-filter"><input type="checkbox" checked={dueOnly} onChange={event=>setDueOnly(event.target.checked)}/>Due for review</label></div><div className="filter-summary"><p role="status">{visibleCaptures.length} of {library.captures.length} screenshots</p>{filtered&&<button className="text-button" onClick={clearFilters}>Clear filters</button>}</div></section>}
-    {!library.captures.length?<div className="empty-state" onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();if(!busy)importFile(event.dataTransfer.files[0]);}}><ImagePlus size={30}/><h2>Add your first screenshot</h2><p>Import language you want to practise. You can also drop an image here.</p><button disabled={!!busy} onClick={()=>library.profile?input.current?.click():openSettings()}>Add screenshot</button></div>:!visibleCaptures.length?<div className="empty-state"><h2>No matching screenshots</h2><p>Try another phrase or clear your filters.</p><button onClick={clearFilters}>Show all screenshots</button></div>:<div className="capture-list">{visibleCaptures.map(c=><article className="capture-row" key={c.id}>
-     <button className="thumbnail" aria-label={`View source: ${c.title}`} onClick={()=>openSource({capture:c})}>{c.imageKey?<img alt="" src={`/api/image/${c.id}`}/>:<BookOpen size={28}/>}</button>
+    {!library.captures.length?<div className="empty-state"><ImagePlus size={30}/><h2>Add your first screenshot</h2><p>Add screenshots of language you want to practise. Each image keeps its own source and learning materials.</p><button disabled={!!busy} onClick={()=>library.profile?input.current?.click():openSettings()}>Add screenshots</button></div>:!visibleCaptures.length?<div className="empty-state"><h2>No matching screenshots</h2><p>Try another phrase or clear your filters.</p><button onClick={clearFilters}>Show all screenshots</button></div>:<div className="capture-list">{visibleCaptures.map(c=><article className="capture-row" key={c.id}>
+     <button className="thumbnail" disabled={!!busy} aria-label={`View source: ${c.title}`} onClick={()=>openSource({capture:c})}>{c.imageKey?<img alt="" src={`/api/image/${c.id}`}/>:<BookOpen size={28}/>}</button>
      <div className="capture-body"><div className="metadata">{new Date(c.createdAt).toLocaleDateString(undefined,{month:'short',day:'numeric'})}{c.collection!=='Unsorted'&&<span>{c.collection}</span>}</div><h2>{c.title}</h2>
       {c.plan?.items.length?<div className="item-forms">{c.plan.items.map(i=><span key={i.id}>{i.form}{library.sources.filter(s=>s.item_id===i.id).length>1&&<small> · {library.sources.filter(s=>s.item_id===i.id).length} sources</small>}</span>)}</div>:<p className="muted">{c.extraction?'Text ready to review':'Review text to create practice'}</p>}
-      <div className="row-actions"><button className="text-button" disabled={!!busy} onClick={()=>openReview(c)}>Review text</button><button className="text-button" onClick={()=>openSource({capture:c})}>View source</button><button disabled={!!busy} onClick={()=>practise(c)}>Practise</button></div>
+      <div className="row-actions"><button className="text-button" disabled={!!busy} onClick={()=>openReview(c)}>Review text</button><button className="text-button" disabled={!!busy} onClick={()=>openSource({capture:c})}>View source</button><button disabled={!!busy} onClick={()=>practise(c)}>Practise</button></div>
      </div></article>)}</div>}
    </>:<>
     <div className="view-heading"><h1 ref={practiceHeading} tabIndex={-1}>{session?.reviewBatch?'Review practice':'Practice'}</h1>{session&&!session.done&&<span className="muted">{session.index+1} of {session.total}</span>}</div>
