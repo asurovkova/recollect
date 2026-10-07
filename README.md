@@ -1,14 +1,22 @@
 # Recollect
 
-A private screenshot language-learning prototype with two views: **Library** and **Practice**. The main flow is **Add screenshot → Review text if needed → Practise**.
+A screenshot-based language-learning prototype with **Library**, **Practice**, and **Progress** views. The main flow is **Add screenshots → Review text if needed → Practise → Revisit words**.
+
+Live app: [Recollect](https://recollect-learning-studio-anna.boruvkovykolacek.chatgpt.site/). This repository contains source code and automated tests; API credentials, learner records, uploaded screenshots, and local runtime data are excluded. The app uses Sites hosting with Cloudflare D1/R2 and ChatGPT sign-in; GitHub stores the source, while those services run the app.
 
 ## Use
 
 1. Save a target language, approximate CEFR level, and learning goal once. Edit these in Learning settings later.
-2. Import a PNG, JPEG, or WebP screenshot (up to 8 MB). OCR retains text regions, reading order, coordinates, and confidence. English, Spanish, French, German, Korean, and Japanese are available.
+2. Select or drag in up to 10 PNG, JPEG, or WebP screenshots at once (up to 8 MB each). Each image has its own processing status and review or practice action. Failed files do not interrupt the remaining queue; retries reuse the upload ID to avoid duplicate captures. Keep the tab open until the batch finishes. OCR retains text regions, reading order, coordinates, and confidence. English, Spanish, French, German, Korean, and Japanese are available.
 3. OCR retries a text-block and sparse-text layout when the first pass is empty or uncertain. If reading cannot finish, the screenshot can still be saved with a manual correction. When prompted, select relevant regions and check their language. Deselect interface text. Mark areas of interest and enter corrections separately; original OCR text and the original image remain saved.
 4. Practise one question at a time: answer, check, read feedback, continue. Feedback distinguishes objective answer matching, AI assessment, and unverified self-review. Confidence is never labelled correctness. Choose “I’m still unsure” to save an unresolved response. View source shows the exact region and marks an unanswered question as assisted.
 5. Sessions and responses persist. Completion shows independent recall, mistakes, unverified sentence use, and the next recall date for each item. Reopen the latest recap from Practice or start focused practice from it. Source-only writing tasks rotate between a goal-related message, a question, and a short dialogue. The Practice view shows material ready for review. There are no notifications or background photo-library access.
+
+## Progress and recap
+
+Progress shows words and phrases, practice counts, independent recall results, assisted answers, writing checks, and review dates. Filter by language or learning status, or search for a word. **Practise all to revisit** combines available words due for review or needing more practice across screenshots. An optional checkbox includes words still building familiarity. Combined sessions keep each question linked to its source and can be paused and resumed.
+
+Practice offers mixed tasks, flashcards, recall, guided writing, and mini-dialogues. Progress distinguishes supported recall evidence from self-reviewed confidence; it does not claim permanent mastery.
 
 ## Model connection and fallback
 
@@ -24,7 +32,7 @@ With a model connected, the pipeline:
 - matches existing items by language, normalized form, and contextual sense, attaching new source examples without replacing history;
 - grades open responses by meaning and use, allowing alternatives and returning uncertainty for learner review.
 
-**The deployed environment currently has no model key configured.** Until connected, the app explicitly provides **source recall only**: learners enter up to four words or phrases, one per line (commas stay within a phrase); selection tolerates case, apostrophe style, Unicode composition and Japanese OCR spacing while deterministic cloze questions preserve the captured wording, and new-sentence responses require learner review. Repeated words use a contiguous source excerpt containing one occurrence. Missing or unsupported selections return specific guidance and remain in the editor; older fallback lessons refresh when reopened. It does not invent contextual definitions, automatically match uncertain senses, or pretend to grade open responses. Unverified senses stay separate across screenshots. Automatic selection, semantic matching, vision interpretation, and model quality/grading paths require a live connection to activate and verify.
+A new clone does not include an API key. Without a configured model connection, the app explicitly provides **source recall only**: learners enter up to four words or phrases, one per line (commas stay within a phrase); selection tolerates case, apostrophe style, Unicode composition and Japanese OCR spacing while deterministic cloze questions preserve the captured wording, and new-sentence responses require learner review. Repeated words use a contiguous source excerpt containing one occurrence. Missing or unsupported selections return specific guidance and remain in the editor; older fallback lessons refresh when reopened. It does not invent contextual definitions, automatically match uncertain senses, or pretend to grade open responses. Unverified senses stay separate across screenshots. Automatic selection, semantic matching, vision interpretation, and model quality/grading paths require a live connection.
 
 The integration follows the official [Responses structured-output format](https://developers.openai.com/api/docs/guides/structured-outputs) and [image-input format](https://developers.openai.com/api/docs/guides/images-vision). Requests use `store: false`. With a connection, images are sent to the model for layout analysis and selected text, learning settings, and relevant prior item summaries are used for lesson generation. Without one, OCR runs in the browser and images/text are saved only to the private app storage. Tesseract downloads its worker, WASM runtime, and language data on first use.
 
@@ -58,6 +66,8 @@ npm ci
 npm run build
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_melted_iceman.sql
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0001_fair_vermin.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0002_secret_malice.sql
+node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0003_pale_peter_parker.sql
 npm run dev -- --port 5179
 ```
 
@@ -74,7 +84,7 @@ npm run build
 
 The API check requires the local preview **without a model key** and creates authored test captures; it does not delete learner data. It checks authentication, origin protection, image storage, review gates, immutable original text, separate corrections, answer secrecy, idempotency, retry variants, uncertain-answer review, session resumption, and stored schedules.
 
-Unit checks cover source provenance, uncertainty, selection limits, sense identity, answer leakage, duplicate questions, objective grading, scheduling, and the one-revision limit. Browser QA covers real OCR upload, region selection, settings, practice feedback, source highlighting, persistence, and desktop/mobile layouts. Live model responses have not been tested because no key is configured.
+Unit checks cover source provenance, uncertainty, selection limits, sense identity, answer leakage, duplicate questions, objective grading, scheduling, and the one-revision limit. Browser QA covers real OCR upload, region selection, settings, practice feedback, source highlighting, persistence, and desktop/mobile layouts. The latest upload verification used a live model connection: both valid images in a mixed batch were saved and received practice materials, while an invalid file was isolated. The automated suite currently contains 121 passing tests. These checks establish software behavior, not learning effectiveness.
 
 ## Engagement fixes (October 2026)
 
