@@ -32,11 +32,13 @@ export async function persistPlan(owner:string,capture:SavedCapture,plan:Plan,pr
 }
 
 export async function learnerMemory(owner:string,itemIds:string[]){
- const memory:Record<string,import('./tutoring').LearnerMemory>={};
- for(const id of itemIds){
-  const attempts=await db().prepare('SELECT diagnosis,assisted FROM item_attempts WHERE user_id=? AND item_id=? ORDER BY created_at DESC LIMIT 12').bind(owner,id).all<{diagnosis:import('./tutoring').Difficulty|null;assisted:number}>();
-  const reflection=await db().prepare('SELECT note FROM learner_reflections WHERE user_id=? AND item_id=? ORDER BY updated_at DESC LIMIT 1').bind(owner,id).first<{note:string}>();
-  memory[id]={difficulties:attempts.results.flatMap(a=>a.diagnosis&&a.diagnosis!=='uncertain'?[a.diagnosis]:[]),helpedAttempts:attempts.results.filter(a=>a.assisted).length,reflection:reflection?.note??null};
- }
+ const memory:Record<string,import('./tutoring').LearnerMemory>=Object.fromEntries(itemIds.map(id=>[id,{difficulties:[],helpedAttempts:0,reflection:null}]));
+ const [attempts,reflections]=await Promise.all([
+  db().prepare('SELECT item_id,diagnosis,assisted FROM item_attempts WHERE user_id=? ORDER BY created_at DESC').bind(owner).all<{item_id:string;diagnosis:import('./tutoring').Difficulty|null;assisted:number}>(),
+  db().prepare('SELECT item_id,note FROM learner_reflections WHERE user_id=? ORDER BY updated_at DESC').bind(owner).all<{item_id:string;note:string}>()
+ ]);
+ const counts=new Map<string,number>();
+ for(const a of attempts.results){const m=memory[a.item_id],count=counts.get(a.item_id)??0;if(!m||count>=12)continue;counts.set(a.item_id,count+1);if(a.diagnosis&&a.diagnosis!=='uncertain')m.difficulties.push(a.diagnosis);if(a.assisted)m.helpedAttempts++;}
+ for(const r of reflections.results){const m=memory[r.item_id];if(m&&m.reflection===null)m.reflection=r.note;}
  return memory;
 }

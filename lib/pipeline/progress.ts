@@ -5,7 +5,7 @@ export type ProgressStatus='new'|'due'|'needs-practice'|'building'|'remembering'
 export const progressLabels:Record<ProgressStatus,string>={new:'Not practised yet',due:'Review due','needs-practice':'Needs practice',building:'Building familiarity',remembering:'Remembering well'};
 export type ProgressAttempt={id:string;item_id:string;session_id:string;exercise_id:string;outcome:string;assisted:number;revision:number;created_at:string};
 export type ProgressItemRow={data:string;streak:number|null;due_at:string|null};
-export type WordProgress={id:string;form:string;language:string;sense:string;status:ProgressStatus;reason:string;dueAt:string|null;lastPractised:string|null;practiceCount:number;answerCount:number;independentRecall:{correct:number;total:number};assistedAnswers:number;writing:{correct:number;total:number};cardReviews:number;selfReviews:number;skipped:number;olderResults:number;reviewStreak:number;captureId:string|null;sourceCaptureId:string;hasRecall:boolean};
+export type WordProgress={id:string;form:string;language:string;sense:string;status:ProgressStatus;reason:string;practiceFocus?:'recall'|'recognition'|'application';dueAt:string|null;lastPractised:string|null;practiceCount:number;answerCount:number;independentRecall:{correct:number;total:number};assistedAnswers:number;writing:{correct:number;total:number};cardReviews:number;selfReviews:number;skipped:number;olderResults:number;reviewStreak:number;captureId:string|null;sourceCaptureId:string;hasRecall:boolean};
 export type ProgressData={items:WordProgress[];asOf:string};
 type Lesson={id:string;itemIds:string[];recallIds:string[]};
 
@@ -52,6 +52,7 @@ export function buildProgress(rows:ProgressItemRow[],attempts:ProgressAttempt[],
   }
   result.practiceCount=tasks.size;result.cardReviews=cards.size;result.selfReviews=reviews.size;result.skipped=skips.size;
   const difficulty=[...latest.entries()].find(([,f])=>f.outcome==='incorrect');
+  result.practiceFocus=(difficulty?.[0] as WordProgress['practiceFocus'])??'recall';
   const uncertain=[...latest.values()].some(f=>f.outcome==='uncertain');
   if(difficulty||lastDecision==='practise'||lastDecision==='unsure'||uncertain){
    result.status='needs-practice';result.reason=difficulty?(difficulty[0]==='application'?'Your latest writing check suggested a revision. AI feedback can be mistaken.':difficulty[0]==='recall'?'Your latest recall attempt needed another try.':'Your latest meaning check needed another try.'):lastDecision==='practise'?'You marked this for more practice.':lastDecision==='unsure'?'You said you were still unsure.':'Your latest answer could not be checked.';

@@ -3,27 +3,33 @@ import {useEffect,useMemo,useState} from 'react';
 import {BookOpen,RefreshCw} from 'lucide-react';
 import {languages} from '@/lib/pipeline/schema';
 import {progressLabels,type ProgressData,type ProgressStatus,type WordProgress} from '@/lib/pipeline/progress';
+import {needsRecap} from '@/lib/pipeline/review-batch';
 
 const dates=(value:string)=>new Date(value).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'});
-export function Progress({onPractise,onSource,onLibrary,busy}:{onPractise:(word:WordProgress)=>void;onSource:(word:WordProgress)=>void;onLibrary:()=>void;busy:boolean}){
+export function Progress({onPractise,onPractiseAll,onResume,onSource,onLibrary,busy}:{onPractise:(word:WordProgress)=>void;onPractiseAll:(language:string,includeBuilding:boolean)=>void;onResume?:()=>void;onSource:(word:WordProgress)=>void;onLibrary:()=>void;busy:boolean}){
  const [data,setData]=useState<ProgressData|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
  const [query,setQuery]=useState(''),[language,setLanguage]=useState(''),[filter,setFilter]=useState('all');
+ const [includeBuilding,setIncludeBuilding]=useState(false);
  async function load(){setLoading(true);setError('');try{const response=await fetch('/api/v2/progress');const result=await response.json() as ProgressData&{error?:string};if(!response.ok)throw new Error(result.error||'Your progress could not load. Please try again.');setData(result);}catch(e){setError(e instanceof Error?e.message:'Your progress could not load.');}finally{setLoading(false);}}
  useEffect(()=>{void load();},[]);
  const items=useMemo(()=>data?.items.filter(i=>!language||i.language===language)??[],[data,language]);
  const due=(w:WordProgress)=>w.practiceCount>0&&!!w.dueAt&&w.dueAt<=(data?.asOf??'');
  const review=(w:WordProgress)=>due(w)||w.status==='needs-practice';
  const counts={words:items.length,tasks:items.reduce((n,w)=>n+w.practiceCount,0),remembering:items.filter(w=>w.status==='remembering').length,review:items.filter(review).length};
+ const recapWords=items.filter(w=>needsRecap(w,data?.asOf??'',includeBuilding));
+ const availableRecap=recapWords.filter(w=>w.captureId);
  const order:Record<ProgressStatus,number>={'needs-practice':0,due:1,new:2,building:3,remembering:4};
  const shown=items.filter(w=>(filter==='all'||filter==='review'&&review(w)||w.status===filter)&&`${w.form} ${w.sense}`.normalize('NFKC').toLocaleLowerCase().includes(query.normalize('NFKC').toLocaleLowerCase().trim())).sort((a,b)=>order[a.status]-order[b.status]||a.form.localeCompare(b.form));
  return <section className="progress-page" aria-labelledby="progress-title">
   <div className="view-heading"><div><h1 id="progress-title">Your progress</h1><p className="muted">See what is sticking and what to revisit.</p></div><button aria-label="Refresh progress" disabled={loading||busy} onClick={()=>void load()}><RefreshCw size={17}/>Refresh</button></div>
   {error&&<p className="error" role="alert">{error}</p>}
+  {onResume&&<div className="resume-banner"><p>Your unfinished practice is saved.</p><button disabled={busy} onClick={onResume}>Continue saved practice</button></div>}
   {loading&&!data?<p role="status">Loading your practice history…</p>:data&&!data.items.length?<div className="empty-state"><BookOpen size={30}/><h2>Your vocabulary grows here</h2><p>Create a lesson from a screenshot. Your words, practice results and review dates will appear here.</p><button className="primary" onClick={onLibrary}>Open library</button></div>:data&&<>
    <label className="progress-language">Learning language<select value={language} onChange={e=>setLanguage(e.target.value)}><option value="">All languages</option>{Object.entries(languages).map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label>
    <div className="progress-metrics" aria-label="Practice overview">
     <div><strong>{counts.words}</strong><span>Words & phrases</span></div><div><strong>{counts.tasks}</strong><span>Practice tasks</span></div><div><strong>{counts.remembering}</strong><span>Remembering well</span></div><button className={filter==='review'?'selected':''} aria-pressed={filter==='review'} onClick={()=>setFilter(filter==='review'?'all':'review')}><strong>{counts.review}</strong><span>To revisit</span></button>
    </div>
+   <section className="batch-review" aria-label="Practise words together"><div><h2>Revisit your words together</h2><p>One session for words due for review or marked as needing practice, across your {language?languages[language as keyof typeof languages]:'saved'} screenshots.</p><label><input type="checkbox" checked={includeBuilding} onChange={e=>setIncludeBuilding(e.target.checked)}/>Also include words still building familiarity</label>{recapWords.length>availableRecap.length&&<p className="batch-unavailable">{recapWords.length-availableRecap.length} words need their source lessons reviewed first.</p>}{!availableRecap.length&&<p className="batch-unavailable">{includeBuilding?'No available words need this review right now.':'No available words are due or marked for practice. Include words still building familiarity for extra practice.'}</p>}</div><div className="batch-start"><button className="primary" disabled={busy||loading||!availableRecap.length} onClick={()=>onPractiseAll(language,includeBuilding)}>Practise all to revisit ({availableRecap.length})</button><span>Pause and continue whenever you like.</span></div></section>
    <details className="progress-key"><summary>What do these numbers mean?</summary><p>Each answered question or studied card counts once. Retrying or rating the same task does not add another task; skips are excluded. “Remembering well” means at least two successful scheduled recall reviews, with no latest difficulty recorded. It is not a claim of permanent mastery.</p><p>Independent recall, answers with help, AI writing checks and your own confidence are recorded separately. AI checks can make mistakes. Review dates come from your recall schedule.</p></details>
    <div className="progress-filters"><label>Find a word or phrase<input type="search" placeholder="Search vocabulary or meaning" value={query} onChange={e=>setQuery(e.target.value)}/></label><label>Show<select value={filter} onChange={e=>setFilter(e.target.value)}><option value="all">All words</option><option value="review">To revisit</option>{Object.entries(progressLabels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></div>
    <p className="progress-result-count" role="status">{shown.length} {shown.length===1?'word or phrase':'words and phrases'}{filter!=='all'||query?(shown.length===1?' matches your filters':' match your filters'):''}</p>

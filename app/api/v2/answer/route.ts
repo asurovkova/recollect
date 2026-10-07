@@ -32,11 +32,12 @@ export async function POST(request:Request){try{
  const step=s.tutor?stepFor(s,e):null,item=s.items.find(i=>i.id===e.itemId)!;
  let record:Feedback|null=null,revision=step?.attempts.length??0;
  const priorHintLevel=step?.hints.length??0;
+ const itemProfile=s.itemProfiles?.[e.itemId]??s.profile;
  if(e.type==='flashcard'&&['check','hint','style'].includes(body.action))throw new HttpError(400,'Turn the card over to review its meaning.');
  if(body.action==='source'){
   markHelp(s,e);
   // Opening an image can reveal any target from this screenshot.
-  expose(s,s.items.map(i=>i.source.quote));
+  expose(s,s.items.filter(i=>i.source.captureId===e.source.captureId).map(i=>i.source.quote));
  }else if(body.action==='hint'){
   if(!step||step.stage==='feedback'||step.hints.length>=2)throw new HttpError(400,'You can revise your answer or reveal the explanation.');
   step.hints.push(hintFor(e,item,s.feedback[e.id],step.hints.length+1));markHelp(s,e);expose(s,step.hints);
@@ -49,7 +50,7 @@ export async function POST(request:Request){try{
   }
  }else if(body.action==='style'){
   if((step?step.attempts.length||step.stage==='feedback':s.feedback[e.id])||e.type!=='open'||!item||!applicationStyles.includes(body.style))throw new HttpError(400,'Choose a writing task before checking your answer.');
-  e.prompt=applicationPrompt(item,s.profile,body.style);e.context='';e.contextKind='new';prepareQuestion(s);
+  e.prompt=applicationPrompt(item,itemProfile,body.style);e.context='';e.contextKind='new';prepareQuestion(s);
  }else if(body.action==='continue'||body.action==='skip'){
   if(body.action==='continue'&&!s.feedback[e.id])throw new HttpError(400,'Check your answer first, or choose Skip for now.');
   record=advancePractice(s,e,body.action==='skip');
@@ -64,7 +65,7 @@ export async function POST(request:Request){try{
   else {
   if(typeof body.answer!=='string'||!body.answer.trim()||body.answer.length>2000)throw new HttpError(400,'Enter a short answer first.');
   if(['meaning','collocation'].includes(e.type)&&!e.choices.includes(body.answer))throw new HttpError(400,'Select one of the answers.');
-  record=e.type==='open'?await gradeOpen(e,item,body.answer,s.profile,s.tutor?.memory[e.itemId]):gradeObjective(e,body.answer);
+  record=e.type==='open'?await gradeOpen(e,item,body.answer,itemProfile,s.tutor?.memory[e.itemId]):gradeObjective(e,body.answer);
   record=feedbackFor(e,record);record.assisted=isAssisted(s,e)||revision>0;
   if(record.outcome==='incorrect'&&!record.diagnosis)record.diagnosis=e.phase==='recall'?'retrieval':e.type==='reorder'?'word-order':'meaning';
   if(step)recordTutorAttempt(s,e,body.answer,record);else {s.feedback[e.id]=record;s.answers[e.id]=body.answer;}
